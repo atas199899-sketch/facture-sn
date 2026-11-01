@@ -53,3 +53,17 @@ export const saveItem = async it => {
     : await sb.from('catalog_items').insert(row).select().single());
 };
 export const deleteItem = async id => ok(await sb.from('catalog_items').delete().eq('id', id));
+
+/* ---------- Devis et factures ---------- */
+// Montants en entiers : francs CFA, ou centimes pour les documents en euros.
+// Numéro, état et totaux sont calculés par la base (voir supabase/schema.sql).
+const DOC_SUMMARY = 'id, type, number, status, currency, client_id, issue_date, due_date, total_ttc, converted_to, created_at';
+export const listDocuments = async () => ok(await sb.from('documents').select(DOC_SUMMARY).order('created_at', {ascending: false}));
+export const getDocument = async id => ok(await sb.from('documents').select('*, lines:document_lines(*)').eq('id', id)
+  .order('position', {referencedTable: 'document_lines'}).single());
+export const summaryOf = async id => ok(await sb.from('documents').select(DOC_SUMMARY).eq('id', id).single());
+export const saveDocument = async (doc, lines) => ok(await sb.rpc('save_document', {p_doc: doc, p_lines: lines}));
+export const finalizeDocument = async id => ok(await sb.rpc('finalize_document', {p_id: id}));
+export const cancelDocument = async id => ok(await sb.rpc('cancel_document', {p_id: id}));
+export const convertQuote = async id => ok(await sb.rpc('convert_quote', {p_id: id}));
+export const deleteDocument = async id => ok(await sb.from('documents').delete().eq('id', id));

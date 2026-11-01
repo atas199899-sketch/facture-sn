@@ -263,3 +263,23 @@ input[type=password]:focus{outline:2px solid var(--accent);outline-offset:-1px;b
 .step .txt small{color:var(--muted)}
 .side .who{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn[disabled]{opacity:.6;cursor:wait}
+
+/* ---------- Devis et factures ---------- */
+.paper{position:relative;overflow:hidden}
+.watermark{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;
+  font:700 clamp(48px,10vw,110px) var(--f-display);letter-spacing:.12em;color:var(--ink);opacity:.06;transform:rotate(-24deg)}
+.stamp.void{border-color:var(--bad);color:var(--bad)}
+
+/* Impression et « Enregistrer en PDF » : seule la feuille est imprimée, toujours en clair */
+@media print{
+  @page{size:A4;margin:12mm}
+  :root:root:root{--paper:#fff;--ink:#13231E;--muted:#5A6B65;--line:#D6DED9;--paper-line:#E3E9E5;--accent:#0A6B53;--good:#1D7A3E;--bad:#B42B22;--bg:#fff;color-scheme:light}
+  html,body{background:#fff}
+  :root{padding:0}
+  .side,.noprint,#toast{display:none!important}
+  .app{display:block}
+  main{padding:0!important;max-width:none}
+  .stack{gap:0}
+  .paper{border:0;border-radius:0;box-shadow:none;padding:0;max-width:none}
+  .p-lines tr{break-inside:avoid}
+}
