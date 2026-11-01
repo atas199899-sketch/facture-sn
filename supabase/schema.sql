@@ -267,6 +267,9 @@ begin
             coalesce((p_doc->>'deposit_pct')::smallint, 0), coalesce((p_doc->>'tva')::boolean, false), coalesce(p_doc->>'notes', ''))
     returning id into v_id;
   else
+    if exists (select 1 from public.documents where id = v_id and status <> 'draft') then
+      raise exception 'Ce document est validé : il ne peut plus être modifié. Dupliquez-le pour en faire un nouveau.';
+    end if;
     update public.documents set
       client_id = (p_doc->>'client_id')::uuid, type = p_doc->>'type', currency = p_doc->>'currency',
       issue_date = (p_doc->>'issue_date')::date, due_date = nullif(p_doc->>'due_date', '')::date,

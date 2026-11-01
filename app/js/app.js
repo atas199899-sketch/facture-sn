@@ -20,6 +20,7 @@ function humanError(e) {
   if (/valid email|invalid email/i.test(m)) return 'Cette adresse e-mail n’est pas valide.';
   if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Connexion impossible. Vérifiez votre accès à internet.';
   if (/foreign key/i.test(m) && /client/i.test(m)) return 'Ce client a des devis ou des factures : il ne peut pas être supprimé.';
+  if (/row-level security|permission denied/i.test(m)) return 'Action non autorisée sur ce document.';
   if (/relation .* does not exist|schema cache|Could not find the function/i.test(m)) return 'La base de données n’est pas à jour : lancez le script supabase/schema.sql dans Supabase.';
   return m || 'Une erreur est survenue.';
 }
