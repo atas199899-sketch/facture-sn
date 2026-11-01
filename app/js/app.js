@@ -1,13 +1,14 @@
 // Facture SN : écrans et navigation de l'application connectée
 // Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures.
 import * as db from './db.js';
+import {WHATSAPP_GATEWAY} from './config.js';
 import {esc, num, parseNum, isEur, amt, amtShort, toMinor, toMajor, toXOF, decimal, today, addDays, fmtDate, totals, sommeEnLettres} from './format.js';
 
 const $ = s => document.querySelector(s);
 
 const state = {session: null, profile: null, clients: [], catalog: [], docs: [], loaded: false, loadErr: ''};
 const ui = {view: 'home', authMode: 'login', err: '', info: '', busy: false, clientDraft: null, catDraft: null, confirm: null, recovery: false,
-  doc: null, draft: null, filter: 'all', q: '', share: false, back: null};
+  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1};
 
 /* ---------- Messages d'erreur lisibles ---------- */
 function humanError(e) {
@@ -15,6 +16,9 @@ function humanError(e) {
   if (/Invalid login credentials/i.test(m)) return 'E-mail ou mot de passe incorrect.';
   if (/already registered|already exists/i.test(m)) return 'Un compte existe déjà avec cet e-mail. Connectez-vous.';
   if (/Email not confirmed/i.test(m)) return 'Confirmez d’abord votre adresse avec le lien reçu par e-mail.';
+  if (/Token has expired or is invalid|otp.*(expired|invalid)/i.test(m)) return 'Code incorrect ou expiré. Redemandez un code.';
+  if (/security purposes/i.test(m)) return 'Patientez quelques secondes avant de redemander un code.';
+  if (/phone.*(disabled|provider)|Unsupported phone/i.test(m)) return 'La connexion par numéro n’est pas encore activée. Utilisez votre e-mail.';
   if (/Password should be at least/i.test(m)) return 'Le mot de passe doit contenir au moins 6 caractères.';
   if (/rate limit|too many/i.test(m)) return 'Trop de tentatives. Patientez quelques minutes avant de réessayer.';
   if (/valid email|invalid email/i.test(m)) return 'Cette adresse e-mail n’est pas valide.';
@@ -65,8 +69,36 @@ function vSetup() {
     <a class="btn" href="../demo.html">Voir la démo en attendant</a></div></div>`;
 }
 
+// Numéro saisi -> format international (+221 par défaut pour les numéros à 9 chiffres)
+function normPhone(v) {
+  let d = String(v).replace(/\D/g, '').replace(/^00/, '');
+  if (d.length === 9) d = '221' + d;
+  return d.length >= 11 && d.length <= 15 ? '+' + d : '';
+}
+const showPhone = p => p.replace(/^\+221(\d{2})(\d{3})(\d{2})(\d{2})$/, '+221 $1 $2 $3 $4');
+const userLabel = u => u.email || (u.phone ? showPhone('+' + u.phone) : '');
+
+function vPhone() {
+  const wa = `https://wa.me/${WHATSAPP_GATEWAY}?text=${encodeURIComponent('Bonjour Facture SN, je demande mon code de connexion.')}`;
+  if (ui.phoneStep === 1) return `<div class="auth"><form class="auth-card" id="phoneform">${brand}<h1>Connexion avec votre numéro</h1>
+    <p class="muted" style="margin:0">Vous recevrez un code par WhatsApp. Pas besoin de mot de passe. Votre compte est créé automatiquement la première fois.</p>
+    <label class="field">Numéro WhatsApp<input type="tel" id="a-phone" value="${esc(ui.phone)}" placeholder="77 123 45 67" autocomplete="tel" required></label>
+    ${msgs()}
+    <button class="btn primary" type="submit" ${ui.busy ? 'disabled' : ''}>Recevoir mon code</button>
+    <button class="linkbtn" type="button" data-act="authMode" data-mode="login">← Utiliser mon e-mail</button></form></div>`;
+  return `<div class="auth"><form class="auth-card" id="codeform">${brand}<h1>Demandez votre code sur WhatsApp</h1>
+    <ol class="muted" style="margin:0;padding-left:20px"><li>Appuyez sur le bouton vert : WhatsApp s’ouvre avec un message prêt.</li>
+      <li>Envoyez-le <b>depuis le ${esc(showPhone(ui.phone))}</b>.</li><li>Vous recevez votre code en réponse : tapez-le ci-dessous.</li></ol>
+    <a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">Demander mon code sur WhatsApp</a>
+    <label class="field">Code reçu<input type="text" id="a-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required></label>
+    ${msgs()}
+    <button class="btn" type="submit" ${ui.busy ? 'disabled' : ''}>Se connecter</button>
+    <button class="linkbtn" type="button" data-act="phoneBack">← Changer de numéro</button></form></div>`;
+}
+
 function vAuth() {
   const m = ui.authMode;
+  if (m === 'phone') return vPhone();
   if (m === 'forgot') return `<div class="auth"><form class="auth-card" id="forgotform">${brand}<h1>Mot de passe oublié</h1>
     <p class="muted" style="margin:0">Indiquez votre e-mail : vous recevrez un lien pour choisir un nouveau mot de passe.</p>
     <label class="field">E-mail<input type="email" id="a-email" autocomplete="email" required></label>
@@ -83,6 +115,7 @@ function vAuth() {
     ${msgs()}
     <button class="btn primary" type="submit" ${ui.busy ? 'disabled' : ''}>${m === 'signup' ? 'Créer mon compte' : 'Se connecter'}</button>
     ${m === 'login' ? '<button class="linkbtn" type="button" data-act="authMode" data-mode="forgot">Mot de passe oublié ?</button>' : ''}
+    ${WHATSAPP_GATEWAY ? '<div class="or"><span>ou</span></div><button class="btn" type="button" data-act="authMode" data-mode="phone">Continuer avec mon numéro (WhatsApp)</button>' : ''}
     <a class="linkbtn" href="../demo.html">Voir la démo sans compte</a></form></div>`;
 }
 
@@ -100,7 +133,7 @@ function vOnboarding() {
     <p class="muted" style="margin:0">Ces informations apparaîtront sur vos devis et factures. Vous pourrez les modifier plus tard.</p>
     <label class="field">Votre nom ou nom de marque<input type="text" id="o-name" value="${esc(p.name)}" placeholder="Ex. : Khady Sy" required></label>
     <label class="field">Votre métier<input type="text" id="o-job" value="${esc(p.job)}" placeholder="Ex. : Développeur web"></label>
-    <label class="field">Numéro Wave / Orange Money<input type="tel" id="o-phone" value="${esc(p.phone_pay)}" placeholder="+221 77 000 00 00"></label>
+    <label class="field">Numéro Wave / Orange Money<input type="tel" id="o-phone" value="${esc(p.phone_pay || (state.session.user.phone ? showPhone('+' + state.session.user.phone) : ''))}" placeholder="+221 77 000 00 00"></label>
     ${msgs()}
     <button class="btn primary" type="submit" ${ui.busy ? 'disabled' : ''}>Continuer</button></form></div>`;
 }
@@ -386,7 +419,7 @@ function vProfile() {
       <div class="row"><button type="submit" class="btn primary" ${ui.busy ? 'disabled' : ''}>Enregistrer</button></div>
     </form>
     <section class="card stack" style="gap:12px"><h2 style="margin:0">Compte</h2>
-      <p class="muted" style="margin:0">Connecté avec ${esc(state.session.user.email)}.</p>
+      <p class="muted" style="margin:0">Connecté avec ${esc(userLabel(state.session.user))}.</p>
       <div class="row"><button class="btn" data-act="logout">Se déconnecter</button></div>
     </section>
   </div>`;
@@ -410,7 +443,7 @@ function render(scroll) {
   if (ui.view === 'onboarding') { root.innerHTML = vOnboarding(); return; }
   root.innerHTML = `<div class="app"><aside class="side">${brand}
       <nav aria-label="Navigation">${NAV.map(([v, l]) => `<button data-act="go" data-view="${v}" ${navOf[ui.view] === v ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>
-      <div class="side-cta"><span class="who">${esc(state.session.user.email)}</span></div></aside>
+      <div class="side-cta"><span class="who">${esc(userLabel(state.session.user))}</span></div></aside>
     <main id="main">${views[ui.view]()}</main></div>`;
   if (scroll) window.scrollTo(0, 0);
 }
@@ -443,7 +476,8 @@ function refreshSummary(d) {
 /* ---------- Actions ---------- */
 const acts = {
   go: el => go(el.dataset.view),
-  authMode: el => { ui.authMode = el.dataset.mode; ui.err = ''; ui.info = ''; render(); },
+  authMode: el => { ui.authMode = el.dataset.mode; ui.phoneStep = 1; ui.err = ''; ui.info = ''; render(); },
+  phoneBack: () => { ui.phoneStep = 1; ui.err = ''; render(); },
   retry: () => { state.loadErr = ''; render(); loadAll(); },
   logout: () => run(async () => { await db.signOut(); }),
 
@@ -556,6 +590,17 @@ document.addEventListener('submit', e => {
         if (!session) { ui.authMode = 'login'; ui.info = 'Compte créé. Ouvrez le lien de confirmation reçu par e-mail, puis connectez-vous.'; }
       } else await db.signIn(email, pass);
     });
+  }
+  if (id === 'phoneform') {
+    const phone = normPhone(val('a-phone'));
+    if (!phone) { ui.err = 'Numéro invalide. Exemple : 77 123 45 67, ou +33 6 12 34 56 78 depuis l’étranger.'; return render(); }
+    ui.phone = phone;
+    run(async () => { await db.sendPhoneCode(phone); ui.phoneStep = 2; });
+  }
+  if (id === 'codeform') {
+    const code = val('a-code').replace(/\D/g, '');
+    if (!code) { ui.err = 'Tapez le code reçu sur WhatsApp.'; return render(); }
+    run(async () => { await db.verifyPhoneCode(ui.phone, code); });
   }
   if (id === 'forgotform') {
     const email = val('a-email');

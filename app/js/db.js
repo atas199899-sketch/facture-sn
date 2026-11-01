@@ -23,6 +23,9 @@ export const signIn = async (email, password) => ok(await sb.auth.signInWithPass
 export const signOut = async () => ok(await sb.auth.signOut());
 export const sendReset = async email => ok(await sb.auth.resetPasswordForEmail(email, {redirectTo: backUrl()}));
 export const setPassword = async password => ok(await sb.auth.updateUser({password}));
+// Connexion par numéro : Supabase crée le code, la passerelle WhatsApp le remet (voir docs/MACRODROID.md)
+export const sendPhoneCode = async phone => ok(await sb.auth.signInWithOtp({phone}));
+export const verifyPhoneCode = async (phone, token) => ok(await sb.auth.verifyOtp({phone, token, type: 'sms'}));
 
 /* ---------- Profil ---------- */
 export async function getProfile(user) {

@@ -345,3 +345,69 @@ revoke execute on function public.save_document(jsonb, jsonb), public.finalize_d
   public.cancel_document(uuid), public.convert_quote(uuid) from public, anon;
 grant execute on function public.save_document(jsonb, jsonb), public.finalize_document(uuid),
   public.cancel_document(uuid), public.convert_quote(uuid) to authenticated;
+
+-- ===========================================================================
+-- Connexion par numéro de téléphone, code remis par WhatsApp (sans SMS payant)
+-- 1. Supabase Auth crée le code et appelle send_sms_hook, qui le range dans otp_outbox.
+-- 2. Le freelance écrit au numéro WhatsApp de Facture SN ; le téléphone passerelle
+--    (MacroDroid) appelle claim_otp avec le numéro de l'expéditeur et répond le texte reçu.
+-- Voir docs/MACRODROID.md.
+-- ===========================================================================
+create table if not exists public.otp_outbox (
+  phone       text primary key,                 -- chiffres seuls, ex. 221771234567
+  otp         text not null,
+  created_at  timestamptz not null default now(),
+  claimed_at  timestamptz
+);
+create table if not exists public.gateway_secrets (
+  id      int primary key default 1 check (id = 1),
+  secret  text not null
+);
+insert into public.gateway_secrets (secret) values (encode(gen_random_bytes(24), 'hex')) on conflict (id) do nothing;
+
+alter table public.otp_outbox      enable row level security;
+alter table public.gateway_secrets enable row level security;
+revoke all on public.otp_outbox, public.gateway_secrets from anon, authenticated;
+
+-- Appelé par Supabase Auth à chaque demande de code (Authentication > Auth Hooks > Send SMS)
+create or replace function public.send_sms_hook(event jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.otp_outbox where created_at < now() - interval '1 day';
+  insert into public.otp_outbox (phone, otp)
+  values (regexp_replace(event->'user'->>'phone', '\D', '', 'g'), event->'sms'->>'otp')
+  on conflict (phone) do update set otp = excluded.otp, created_at = now(), claimed_at = null;
+  return '{}'::jsonb;
+end $$;
+revoke execute on function public.send_sms_hook(jsonb) from public, anon, authenticated;
+grant usage on schema public to supabase_auth_admin;
+grant execute on function public.send_sms_hook(jsonb) to supabase_auth_admin;
+
+-- Appelé par le téléphone passerelle : renvoie directement le message à répondre sur WhatsApp
+create or replace function public.claim_otp(p_secret text, p_phone text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare
+  v_title text := regexp_replace(coalesce(p_phone, ''), '[‎‏‪-‮⁦-⁩]', '', 'g');
+  v_phone text;
+  v_otp text;
+begin
+  if p_secret is distinct from (select secret from public.gateway_secrets where id = 1) then
+    perform pg_sleep(1);
+    raise exception 'Clé de la passerelle invalide.';
+  end if;
+  -- Le titre de la notification doit être un numéro : un nom (contact enregistré, pseudo) est refusé
+  if v_title !~ '^\s*\+?[0-9 ()\-  ]{8,22}\s*$' then
+    return 'Bonjour ! Nous n’avons pas pu lire votre numéro. Écrivez-nous depuis le numéro saisi dans l’application Facture SN.';
+  end if;
+  v_phone = regexp_replace(v_title, '\D', '', 'g');
+  if length(v_phone) = 9 then v_phone = '221' || v_phone; end if;
+  update public.otp_outbox set claimed_at = now()
+  where phone = v_phone and created_at > now() - interval '10 minutes'
+  returning otp into v_otp;
+  if v_otp is null then
+    return 'Bonjour ! Pour recevoir un code, saisissez d’abord votre numéro dans l’application Facture SN : https://facture-sn.pages.dev/app/';
+  end if;
+  return 'Votre code Facture SN : ' || v_otp || E'\nIl est valable 10 minutes. Ne le communiquez à personne.';
+end $$;
+revoke execute on function public.claim_otp(text, text) from public;
+grant execute on function public.claim_otp(text, text) to anon, authenticated;

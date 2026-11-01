@@ -6,3 +6,7 @@
 // Ne mettez JAMAIS ici la clé « service_role » ou « secret ».
 export const SUPABASE_URL = 'https://ltbedqounvmpqlgwodmm.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_pd1kEQE6eQMEvz1gb2UwPw_C2Y1ITrl';
+
+// Numéro WhatsApp de la passerelle de connexion (téléphone avec MacroDroid), format international
+// sans espaces, ex. '221770000000'. Laissez vide pour masquer la connexion par numéro.
+export const WHATSAPP_GATEWAY = '';

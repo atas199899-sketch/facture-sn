@@ -283,3 +283,5 @@ input[type=password]:focus{outline:2px solid var(--accent);outline-offset:-1px;b
   .paper{border:0;border-radius:0;box-shadow:none;padding:0;max-width:none}
   .p-lines tr{break-inside:avoid}
 }
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.or::before,.or::after{content:"";flex:1;border-top:1px solid var(--line)}
