@@ -4,6 +4,7 @@ Outil de facturation pour les freelances au Sénégal : devis et factures en FCF
 
 - `index.html` : la page de présentation (landing page) avec la liste d'attente.
 - `app.html` : le prototype de l'application, avec des données d'exemple.
+- `PLAN-TECHNIQUE.md` : le plan technique de la vraie version.
 
 ## État du projet
 
