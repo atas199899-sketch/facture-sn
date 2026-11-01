@@ -7,6 +7,7 @@ Outil de facturation pour les freelances au Sénégal : devis et factures en FCF
 - `app/` : la vraie application (PWA installable), reliée à Supabase.
 - `supabase/schema.sql` : les tables et règles de sécurité à lancer dans Supabase.
 - `PLAN-TECHNIQUE.md` : le plan technique.
+- `docs/MACRODROID.md` : régler le téléphone passerelle pour la connexion par numéro (code remis par WhatsApp).
 
 ## En ligne
 
@@ -19,7 +20,7 @@ Hébergé sur Cloudflare Pages : chaque envoi sur `main` est publié automatique
 ## État du projet
 
 - **Démo** : les données restent dans le navigateur de chaque visiteur (`localStorage`).
-- **Application** (étape 1) : compte, profil, clients et tarifs enregistrés en ligne. Les devis, factures et paiements arrivent aux étapes suivantes.
+- **Application** : compte (e-mail, ou numéro avec code WhatsApp), profil, clients, tarifs, devis et factures. Les paiements arrivent à l'étape 3.
 
 ## Mettre en route l'application
 
