@@ -8,6 +8,14 @@ Outil de facturation pour les freelances au Sénégal : devis et factures en FCF
 - `supabase/schema.sql` : les tables et règles de sécurité à lancer dans Supabase.
 - `PLAN-TECHNIQUE.md` : le plan technique.
 
+## En ligne
+
+- Présentation : https://facture-sn.pages.dev/
+- Démo : https://facture-sn.pages.dev/demo
+- Application : https://facture-sn.pages.dev/app/
+
+Hébergé sur Cloudflare Pages : chaque envoi sur `main` est publié automatiquement.
+
 ## État du projet
 
 - **Démo** : les données restent dans le navigateur de chaque visiteur (`localStorage`).

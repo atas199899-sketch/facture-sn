@@ -30,8 +30,8 @@ Tout le reste (dépenses, objectif de revenus, TVA, export) est déjà maquetté
  │ (PWA) : HTML + JavaScript,    │      │ - PostgreSQL (données)       │
  │ sans étape de compilation     │      │ - Auth (e-mail, Google)      │
  │                              │      │ - Storage (PDF, reçus)       │
- │ Hébergée sur GitHub Pages     │      │ - Edge Functions (serveur)   │
- │ (bêta), puis Cloudflare Pages │      │ - Cron (tâches planifiées)   │
+ │ Hébergée sur Cloudflare Pages │      │ - Edge Functions (serveur)   │
+ │ (facture-sn.pages.dev)        │      │ - Cron (tâches planifiées)   │
  └──────────────────────────────┘      └──────────────┬───────────────┘
                                                       │
                           ┌───────────────────────────┼─────────────────┐
@@ -43,7 +43,7 @@ Tout le reste (dépenses, objectif de revenus, TVA, export) est déjà maquetté
 - **L'application** est une PWA : un site qui s'installe sur l'écran d'accueil du téléphone et s'ouvre en plein écran comme une application. Un seul code pour Android, iPhone et ordinateur.
 - **Pas d'outil de compilation** : des fichiers HTML, CSS et JavaScript (modules ES) servis tels quels. La bibliothèque Supabase est chargée depuis un CDN.
 - **Supabase** fournit la base de données, la connexion, le stockage de fichiers et les fonctions serveur. Région : Europe (Paris ou Francfort). Tout se configure depuis son site web, y compris l'éditeur SQL et l'éditeur de fonctions.
-- **Hébergement** : GitHub Pages pendant la bêta, puis **Cloudflare Pages** branché sur le même dépôt GitHub au moment de faire payer. Les conditions de GitHub Pages ne sont pas prévues pour un service commercial, celles de Cloudflare Pages oui, et l'offre gratuite suffit.
+- **Hébergement** : **Cloudflare Pages**, branché sur le dépôt GitHub : chaque envoi sur `main` est mis en ligne automatiquement sur https://facture-sn.pages.dev. L'usage commercial y est autorisé et l'offre gratuite suffit. Un nom de domaine (ex. `facturesn.com`) pourra y être relié plus tard. GitHub Pages reste actif comme copie, mais n'est pas l'adresse à partager.
 
 ## 3. Choix techniques
 
@@ -149,7 +149,7 @@ Le webhook doit être **idempotent** : si l'agrégateur l'appelle deux fois, le 
 
 | Poste | Bêta | Lancement payant |
 |---|---|---|
-| Hébergement de l'application | 0 (GitHub Pages) | 0 (Cloudflare Pages) |
+| Hébergement de l'application | 0 (Cloudflare Pages) | 0 (Cloudflare Pages) + nom de domaine ≈ 7 000 à 15 000 F/an |
 | Supabase | 0 (offre gratuite) | 0, puis environ 25 $/mois au-delà des limites ou pour les sauvegardes |
 | E-mails | 0 (Brevo gratuit) | 0 |
 | Connexion | 0 (e-mail, Google) | 0 |
