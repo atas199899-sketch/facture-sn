@@ -55,7 +55,7 @@ Tout le reste (dépenses, objectif de revenus, TVA, export) est déjà maquetté
 | Connexion | Supabase Auth : e-mail + mot de passe, puis Google | Gratuit, contrairement au SMS |
 | Sécurité des données | Row Level Security (RLS) PostgreSQL | Chaque freelance ne voit que ses propres données |
 | Installation sur téléphone | Manifeste + service worker (PWA) | Icône sur l'écran d'accueil, sans passer par un store |
-| PDF | Génération dans une Edge Function Supabase | Même rendu partout, PDF stocké et non modifiable |
+| PDF | Étape 2 : impression du navigateur (« Enregistrer en PDF »). Plus tard : génération dans une Edge Function | Gratuit et sans installation ; PDF stocké côté serveur quand l'envoi sera automatisé |
 | Paiement | PayDunya ou CinetPay (Wave, Orange Money, Free Money, carte) | Agrégateurs agréés, pas d'abonnement, commission par paiement |
 | WhatsApp | Bouton « Ouvrir WhatsApp » au lancement, WhatsApp Cloud API ensuite | Gratuit au départ, automatisation quand l'offre Pro rapporte |
 | E-mails | Brevo (SMTP branché sur Supabase Auth) | Offre gratuite d'environ 300 e-mails par jour |
@@ -137,13 +137,13 @@ Le webhook doit être **idempotent** : si l'agrégateur l'appelle deux fois, le 
 
 | Étape | Contenu | État |
 |---|---|---|
-| 0. Préparation | Projet Supabase, dépôt GitHub, landing page, prototype | ✅ en cours |
-| 1. Socle | Connexion, profil, clients, tarifs, installation sur téléphone | 🚧 en cours |
-| 2. Documents | Devis, factures, acomptes, remises, euros, numérotation, aperçu | à faire |
+| 0. Préparation | Projet Supabase, dépôt GitHub, landing page, prototype, Cloudflare Pages | ✅ fait |
+| 1. Socle | Connexion, profil, clients, tarifs, installation sur téléphone | ✅ fait |
+| 2. Documents | Devis, factures, acomptes, remises, euros, numérotation, aperçu, PDF par impression, envoi WhatsApp | ✅ fait |
 | 3. Encaissement | Saisie des paiements, puis liens de paiement et webhook | à faire |
 | 4. Relances et PDF | Liste des retards, message WhatsApp prêt, PDF | à faire |
 | 5. Bêta fermée | 20 à 30 freelances de la liste d'attente, corrections | à faire |
-| 6. Lancement | Cloudflare Pages, offre Pro, nom de domaine, v1.1 | à faire |
+| 6. Lancement | Offre Pro, nom de domaine, connexion par téléphone (SMS ou WhatsApp), v1.1 | à faire |
 
 ## 9. Budget
 
