@@ -383,9 +383,16 @@ revoke execute on function public.send_sms_hook(jsonb) from public, anon, authen
 grant usage on schema public to supabase_auth_admin;
 grant execute on function public.send_sms_hook(jsonb) to supabase_auth_admin;
 
--- Appelé par le téléphone passerelle : renvoie directement le message à répondre sur WhatsApp
-create or replace function public.claim_otp(p_secret text, p_phone text)
-returns text language plpgsql security definer set search_path = '' as $$
+-- Appelé par le téléphone passerelle : renvoie directement le message à répondre sur WhatsApp,
+-- en texte brut (type « text/plain » reconnu par l'API de Supabase)
+do $d$ begin
+  if not exists (select 1 from pg_type where typname = 'text/plain') then
+    create domain public."text/plain" as text;
+  end if;
+end $d$;
+drop function if exists public.claim_otp(text, text);
+create function public.claim_otp(p_secret text, p_phone text)
+returns public."text/plain" language plpgsql security definer set search_path = '' as $$
 declare
   v_title text := regexp_replace(coalesce(p_phone, ''), '[‎‏‪-‮⁦-⁩]', '', 'g');
   v_phone text;
