@@ -68,9 +68,17 @@ Ouvrez MacroDroid > **Ajouter une macro**, nommez-la « Codes Facture SN ».
   `[not_title]` est le texte magique « titre de la notification » : insérez-le avec le bouton « … » de MacroDroid plutôt que de le taper.
 - Réponse : **enregistrer dans une variable locale** de type texte, nommée `reponse`.
 
-### Action 2 : répondre sur WhatsApp
+  Tapez `[not_title]` à la main. Selon la version, le bouton « … » insère `[notification]{not_title}`, qui envoie le texte du message collé au titre : la connexion est alors refusée.
 
-**Notification > Répondre à la notification** (Notification Reply) :
+### Action 2 : ne répondre que si Supabase a renvoyé un texte
+
+**Conditions/Boucles > Si (If)** : Variables locales › `reponse` › **Contient** › `Facture SN`.
+
+Supabase renvoie un texte vide pour nos propres réponses (notifications « Vous ») et pour une deuxième demande du même numéro dans la minute : sans cette condition, MacroDroid enverrait un message vide ou répondrait en boucle.
+
+### Action 3 : répondre sur WhatsApp
+
+**Notification > Répondre à la notification** (Notification Reply), placée entre « Si » et « Fin du Si » :
 
 - Texte : la variable `reponse` (texte magique `[lv=reponse]`).
 
