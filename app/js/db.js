@@ -78,9 +78,3 @@ export const addPayment = async p => ok(await sb.from('payments').insert(pick(p,
 export const deletePayment = async id => ok(await sb.from('payments').delete().eq('id', id));
 export const listPayments = async () => ok(await sb.from('payments').select('id, document_id, amount, paid_at'));
 
-/* ---------- Administration (réservée aux comptes de public.admins) ---------- */
-export const isAdmin = async () => ok(await sb.rpc('is_admin'));
-export const adminOverview = async () => ok(await sb.rpc('admin_overview'));
-export const adminUsers = async () => ok(await sb.rpc('admin_users'));
-export const adminGateway = async () => ok(await sb.rpc('admin_gateway'));
-export const adminSetPlan = async (user, plan) => ok(await sb.rpc('admin_set_plan', {p_user: user, p_plan: plan}));

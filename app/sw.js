@@ -2,7 +2,7 @@
 // Stratégie « réseau d'abord » pour les fichiers de l'application : une mise à jour publiée
 // est visible tout de suite, et le cache ne sert qu'en secours hors connexion.
 // Les appels à Supabase (autre domaine) ne passent jamais par ce cache.
-const CACHE = 'facturesn-v7';
+const CACHE = 'facturesn-v8';
 const SHELL = [
   './', './index.html', './css/app.css', './js/app.js', './js/db.js', './js/config.js', './js/format.js',
   './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'

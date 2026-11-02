@@ -6,9 +6,9 @@ import {esc, num, parseNum, isEur, amt, amtShort, toMinor, toMajor, toXOF, decim
 
 const $ = s => document.querySelector(s);
 
-const state = {session: null, profile: null, clients: [], catalog: [], docs: [], payments: [], admin: false, loaded: false, loadErr: ''};
+const state = {session: null, profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''};
 const ui = {view: 'home', authMode: 'login', err: '', info: '', busy: false, clientDraft: null, catDraft: null, confirm: null, recovery: false,
-  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null, adm: null, admQ: ''};
+  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null};
 
 /* ---------- Messages d'erreur lisibles ---------- */
 function humanError(e) {
@@ -37,7 +37,6 @@ async function loadAll() {
   try {
     const [profile, clients, catalog, docs, payments] = await Promise.all([db.getProfile(state.session.user), db.listClients(), db.listCatalog(), db.listDocuments(), db.listPayments()]);
     Object.assign(state, {profile, clients, catalog, docs, payments, loaded: true, loadErr: ''});
-    state.admin = await db.isAdmin().catch(() => false);
     if (!profile.name) ui.view = 'onboarding';
   } catch (e) {
     state.loadErr = humanError(e);
@@ -467,60 +466,9 @@ function vProfile() {
   </div>`;
 }
 
-/* ---------- Administration ---------- */
-const fmtWhen = ts => ts ? new Date(ts).toLocaleString('fr-FR', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'}) : '—';
-async function loadAdmin() {
-  try {
-    const [overview, users, gateway] = await Promise.all([db.adminOverview(), db.adminUsers(), db.adminGateway()]);
-    ui.adm = {overview, users, gateway};
-  } catch (e) { ui.err = humanError(e); }
-  if (ui.view === 'admin') render();
-}
-function admUsers() {
-  const q = ui.admQ.trim().toLowerCase();
-  const list = ui.adm.users.filter(u => !q || [u.name, u.email, u.phone, u.job].some(v => (v || '').toLowerCase().includes(q)));
-  if (!list.length) return `<p class="empty">Aucun compte ne correspond.</p>`;
-  return `<div class="tablewrap"><table class="list"><thead><tr><th>Compte</th><th class="hide-sm">Inscrit</th><th class="hide-sm">Dernière connexion</th>
-    <th class="num hide-sm">Clients</th><th class="num">Factures</th><th class="num hide-sm">Facturé</th><th class="num hide-sm">Encaissé</th><th>Formule</th></tr></thead>
-    <tbody>${list.map(u => `<tr><td><b>${esc(u.name || 'Profil non rempli')}</b>${u.confirmed ? '' : ' <span class="pill warn">non confirmé</span>'}
-        <br><small class="muted">${esc(u.email || (u.phone ? showPhone('+' + u.phone) : ''))}${u.job ? ' · ' + esc(u.job) : ''}</small></td>
-      <td class="hide-sm">${fmtWhen(u.created_at)}</td><td class="hide-sm">${fmtWhen(u.last_sign_in_at)}</td>
-      <td class="num hide-sm">${u.clients}</td><td class="num">${u.invoices}<small class="muted"> / ${u.documents}</small></td>
-      <td class="num hide-sm">${num(u.billed_xof)}</td><td class="num hide-sm">${num(u.paid_xof)}</td>
-      <td><button class="btn sm ${u.plan === 'pro' ? 'primary' : ''}" data-act="admPlan" data-id="${u.id}" data-plan="${u.plan === 'pro' ? 'free' : 'pro'}"
-        title="${u.plan === 'pro' ? 'Repasser en gratuit' : 'Passer en Pro'}" ${ui.busy ? 'disabled' : ''}>${u.plan === 'pro' ? 'Pro' : 'Gratuit'}</button></td></tr>`).join('')}</tbody></table></div>`;
-}
-function vAdmin() {
-  if (!ui.adm) return ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : `<p class="boot">Chargement de l’administration…</p>`;
-  const o = ui.adm.overview, codes = ui.adm.gateway.filter(g => g.kind === 'code'), msgs = ui.adm.gateway.filter(g => g.kind === 'message');
-  const kpi = (l, v, sub) => `<div class="kpi"><span class="lbl">${l}</span><span class="val">${v}</span><span class="sub">${sub}</span></div>`;
-  return `<div class="head"><div><h1>Administration</h1><p>Visible seulement par vous.</p></div>
-      <button class="btn" data-act="admReload">Actualiser</button></div>
-    <div class="stack">
-      ${ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : ''}
-      <div class="kpis">
-        ${kpi('Comptes', o.users, `+${o.users_7d} cette semaine · ${o.by_phone} par numéro`)}
-        ${kpi('Actifs (7 jours)', o.active_7d, `${o.pro} en Pro`)}
-        ${kpi('Factures validées', o.invoices, `${o.documents} documents au total`)}
-        ${kpi('Facturé', `${num(o.billed_xof)} <small>FCFA</small>`, `${num(o.paid_xof)} FCFA encaissés`)}
-      </div>
-      <section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Comptes</h2>
-        <input type="search" id="admq" class="search" placeholder="Nom, e-mail ou numéro" value="${esc(ui.admQ)}" aria-label="Rechercher un compte"></div>
-        <div id="admusers">${admUsers()}</div></section>
-      <section class="card"><h2>Passerelle WhatsApp</h2>
-        <p class="muted" style="margin:0 0 10px">24 dernières heures : ${o.otp_24h} code${o.otp_24h > 1 ? 's' : ''} demandé${o.otp_24h > 1 ? 's' : ''}, ${o.otp_claimed_24h} remis par WhatsApp.</p>
-        <div class="grid2">
-          <div class="tablewrap"><table class="list"><thead><tr><th>Numéro</th><th>Demandé</th><th>Remis</th></tr></thead>
-            <tbody>${codes.map(g => `<tr><td class="mono">${esc(showPhone('+' + g.label))}</td><td>${fmtWhen(g.created_at)}</td><td>${g.claimed_at ? fmtWhen(g.claimed_at) : '<span class="pill warn">non</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Aucun code.</td></tr>'}</tbody></table></div>
-          <div class="tablewrap"><table class="list"><thead><tr><th>Titre reçu par MacroDroid</th><th>Heure</th></tr></thead>
-            <tbody>${msgs.map(g => `<tr><td>${esc(g.label.slice(0, 80))}</td><td>${fmtWhen(g.created_at)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">Aucun message.</td></tr>'}</tbody></table></div>
-        </div></section>
-    </div>`;
-}
-
-const views = {home: vHome, docs: vDocs, doc: vDoc, edit: vEdit, clients: vClients, client: vClient, catalog: vCatalog, profile: vProfile, admin: vAdmin};
+const views = {home: vHome, docs: vDocs, doc: vDoc, edit: vEdit, clients: vClients, client: vClient, catalog: vCatalog, profile: vProfile};
 const NAV = [['home', 'Accueil'], ['docs', 'Factures et devis'], ['clients', 'Clients'], ['catalog', 'Mes tarifs'], ['profile', 'Mon profil']];
-const navOf = {home: 'home', docs: 'docs', doc: 'docs', edit: 'docs', clients: 'clients', client: 'clients', catalog: 'catalog', profile: 'profile', admin: 'admin'};
+const navOf = {home: 'home', docs: 'docs', doc: 'docs', edit: 'docs', clients: 'clients', client: 'clients', catalog: 'catalog', profile: 'profile'};
 
 function render(scroll) {
   const root = $('#root');
@@ -535,7 +483,7 @@ function render(scroll) {
   }
   if (ui.view === 'onboarding') { root.innerHTML = vOnboarding(); return; }
   root.innerHTML = `<div class="app"><aside class="side">${brand}
-      <nav aria-label="Navigation">${(state.admin ? [...NAV, ['admin', 'Admin']] : NAV).map(([v, l]) => `<button data-act="go" data-view="${v}" ${navOf[ui.view] === v ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>
+      <nav aria-label="Navigation">${NAV.map(([v, l]) => `<button data-act="go" data-view="${v}" ${navOf[ui.view] === v ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>
       <div class="side-cta"><span class="who">${esc(userLabel(state.session.user))}</span></div></aside>
     <main id="main">${views[ui.view]()}</main></div>`;
   if (scroll) window.scrollTo(0, 0);
@@ -568,14 +516,7 @@ function refreshSummary(d) {
 
 /* ---------- Actions ---------- */
 const acts = {
-  go: el => { go(el.dataset.view); if (el.dataset.view === 'admin') loadAdmin(); },
-  admReload: () => { ui.adm = null; ui.err = ''; render(); loadAdmin(); },
-  admPlan: el => run(async () => {
-    await db.adminSetPlan(el.dataset.id, el.dataset.plan);
-    ui.adm.users = ui.adm.users.map(u => u.id === el.dataset.id ? {...u, plan: el.dataset.plan} : u);
-    if (el.dataset.id === state.profile.id) state.profile.plan = el.dataset.plan;
-    toast(el.dataset.plan === 'pro' ? 'Compte passé en Pro' : 'Compte repassé en gratuit');
-  }),
+  go: el => go(el.dataset.view),
   authMode: el => { ui.authMode = el.dataset.mode; ui.phoneStep = 1; ui.err = ''; ui.info = ''; render(); },
   phoneBack: () => { ui.phoneStep = 1; ui.err = ''; render(); },
   retry: () => { state.loadErr = ''; render(); loadAll(); },
@@ -672,7 +613,6 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { ui.q = e.target.value; $('#doclist').innerHTML = docList(); return; }
-  if (e.target.id === 'admq') { ui.admQ = e.target.value; $('#admusers').innerHTML = admUsers(); return; }
   if (e.target.id === 'relmsg') { const a = $('#walink'); if (a) a.href = waLink((ui.doc.snapshot?.client || clientOf(ui.doc.client_id) || {}).phone, e.target.value); return; }
   if (e.target.closest('#editor')) {
     readDraft();
@@ -797,7 +737,7 @@ async function boot() {
     if (event === 'PASSWORD_RECOVERY') ui.recovery = true;
     const had = state.session?.user?.id, now = session?.user?.id;
     state.session = session;
-    if (!now) { Object.assign(state, {profile: null, clients: [], catalog: [], docs: [], payments: [], admin: false, loaded: false, loadErr: ''}); Object.assign(ui, {view: 'home', doc: null, draft: null, adm: null}); render(); }
+    if (!now) { Object.assign(state, {profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''}); Object.assign(ui, {view: 'home', doc: null, draft: null}); render(); }
     else if (now !== had) { state.loaded = false; render(); loadAll(); }
   });
   try { state.session = await db.getSession(); } catch (e) { ui.err = humanError(e); }

@@ -14,6 +14,7 @@ Outil de facturation pour les freelances au Sénégal : devis et factures en FCF
 - Présentation : https://facture-sn.pages.dev/
 - Démo : https://facture-sn.pages.dev/demo
 - Application : https://facture-sn.pages.dev/app/
+- Administration : https://facture-sn.pages.dev/admin/ (comptes déclarés dans `public.admins`)
 
 Hébergé sur Cloudflare Pages : chaque envoi sur `main` est publié automatiquement.
 
