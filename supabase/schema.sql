@@ -508,3 +508,96 @@ begin
 end $$;
 revoke execute on function public.claim_otp(text, text) from public;
 grant execute on function public.claim_otp(text, text) to anon, authenticated;
+
+-- ===========================================================================
+-- Administration : réservée aux comptes listés dans public.admins.
+-- Pour se déclarer admin (une seule fois, dans le SQL Editor) :
+--   insert into public.admins (user_id) select id from auth.users where email = 'VOTRE_EMAIL';
+-- ===========================================================================
+create table if not exists public.admins (
+  user_id     uuid primary key references auth.users (id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+alter table public.admins enable row level security;
+revoke all on public.admins from anon, authenticated;
+
+create or replace function public.is_admin()
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+
+create or replace function public.admin_check()
+returns void language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not public.is_admin() then raise exception 'Accès réservé à l’administrateur.'; end if;
+end $$;
+
+-- Montant converti en FCFA (les documents en euros sont stockés en centimes)
+create or replace function public.to_xof(p_cur text, p_minor bigint)
+returns bigint language sql immutable set search_path = '' as $$
+  select case when p_cur = 'EUR' then round(p_minor * 6.55957) else p_minor end::bigint;
+$$;
+
+create or replace function public.admin_overview()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform public.admin_check();
+  return jsonb_build_object(
+    'users',        (select count(*) from auth.users),
+    'users_7d',     (select count(*) from auth.users where created_at > now() - interval '7 days'),
+    'active_7d',    (select count(*) from auth.users where last_sign_in_at > now() - interval '7 days'),
+    'pro',          (select count(*) from public.profiles where plan = 'pro'),
+    'by_phone',     (select count(*) from auth.users where phone is not null and phone <> ''),
+    'documents',    (select count(*) from public.documents),
+    'invoices',     (select count(*) from public.documents where type = 'FAC' and status = 'sent'),
+    'billed_xof',   (select coalesce(sum(public.to_xof(currency, total_ttc)), 0) from public.documents where type = 'FAC' and status = 'sent'),
+    'paid_xof',     (select coalesce(sum(public.to_xof(d.currency, p.amount)), 0) from public.payments p join public.documents d on d.id = p.document_id),
+    'otp_24h',      (select count(*) from public.otp_outbox where created_at > now() - interval '24 hours'),
+    'otp_claimed_24h', (select count(*) from public.otp_outbox where claimed_at > now() - interval '24 hours')
+  );
+end $$;
+
+drop function if exists public.admin_users();
+create function public.admin_users()
+returns table (id uuid, email text, phone text, created_at timestamptz, last_sign_in_at timestamptz, confirmed boolean,
+               name text, job text, plan text, clients bigint, documents bigint, invoices bigint, billed_xof bigint, paid_xof bigint)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform public.admin_check();
+  return query
+  select u.id, u.email::text, u.phone::text, u.created_at, u.last_sign_in_at,
+         (u.email_confirmed_at is not null or u.phone_confirmed_at is not null),
+         coalesce(p.name, ''), coalesce(p.job, ''), coalesce(p.plan, 'free'),
+         (select count(*) from public.clients c where c.user_id = u.id),
+         (select count(*) from public.documents d where d.user_id = u.id),
+         (select count(*) from public.documents d where d.user_id = u.id and d.type = 'FAC' and d.status = 'sent'),
+         (select coalesce(sum(public.to_xof(d.currency, d.total_ttc)), 0)::bigint from public.documents d where d.user_id = u.id and d.type = 'FAC' and d.status = 'sent'),
+         (select coalesce(sum(public.to_xof(d.currency, x.amount)), 0)::bigint from public.payments x join public.documents d on d.id = x.document_id where x.user_id = u.id)
+  from auth.users u left join public.profiles p on p.id = u.id
+  order by u.created_at desc;
+end $$;
+
+create or replace function public.admin_set_plan(p_user uuid, p_plan text)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform public.admin_check();
+  update public.profiles set plan = p_plan where id = p_user;
+  if not found then raise exception 'Compte introuvable.'; end if;
+end $$;
+
+drop function if exists public.admin_gateway();
+create function public.admin_gateway()
+returns table (kind text, label text, created_at timestamptz, claimed_at timestamptz)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform public.admin_check();
+  return query
+  (select 'code'::text, o.phone, o.created_at, o.claimed_at from public.otp_outbox o order by o.created_at desc limit 30)
+  union all
+  (select 'message'::text, g.title, g.created_at, null::timestamptz from public.gateway_log g order by g.created_at desc limit 30);
+end $$;
+
+revoke execute on function public.is_admin(), public.admin_check(), public.admin_overview(), public.admin_users(),
+  public.admin_set_plan(uuid, text), public.admin_gateway() from public, anon;
+grant execute on function public.is_admin(), public.admin_overview(), public.admin_users(),
+  public.admin_set_plan(uuid, text), public.admin_gateway() to authenticated;
