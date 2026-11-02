@@ -1,14 +1,14 @@
 // Facture SN : écrans et navigation de l'application connectée
-// Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures.
+// Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures. Étape 3 : paiements reçus.
 import * as db from './db.js';
 import {WHATSAPP_GATEWAY} from './config.js';
 import {esc, num, parseNum, isEur, amt, amtShort, toMinor, toMajor, toXOF, decimal, today, addDays, fmtDate, totals, sommeEnLettres} from './format.js';
 
 const $ = s => document.querySelector(s);
 
-const state = {session: null, profile: null, clients: [], catalog: [], docs: [], loaded: false, loadErr: ''};
+const state = {session: null, profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''};
 const ui = {view: 'home', authMode: 'login', err: '', info: '', busy: false, clientDraft: null, catDraft: null, confirm: null, recovery: false,
-  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1};
+  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null};
 
 /* ---------- Messages d'erreur lisibles ---------- */
 function humanError(e) {
@@ -35,8 +35,8 @@ function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; 
 /* ---------- Chargement ---------- */
 async function loadAll() {
   try {
-    const [profile, clients, catalog, docs] = await Promise.all([db.getProfile(state.session.user), db.listClients(), db.listCatalog(), db.listDocuments()]);
-    Object.assign(state, {profile, clients, catalog, docs, loaded: true, loadErr: ''});
+    const [profile, clients, catalog, docs, payments] = await Promise.all([db.getProfile(state.session.user), db.listClients(), db.listCatalog(), db.listDocuments(), db.listPayments()]);
+    Object.assign(state, {profile, clients, catalog, docs, payments, loaded: true, loadErr: ''});
     if (!profile.name) ui.view = 'onboarding';
   } catch (e) {
     state.loadErr = humanError(e);
@@ -50,10 +50,17 @@ function stOf(d) {
   if (d.status === 'cancelled') return 'cancelled';
   const past = d.due_date && d.due_date < today();
   if (d.type === 'DEV') return d.converted_to ? 'accepted' : past ? 'expired' : 'quote';
-  return past ? 'late' : 'issued';
+  if (restOf(d) <= 0) return 'paid';
+  if (past) return 'late';
+  if (d.paid_amount > 0) return d.deposit_amount && d.paid_amount >= d.deposit_amount ? 'deposit' : 'partial';
+  return 'issued';
 }
+// Reste à payer d'une facture validée (0 pour un devis, un brouillon ou une facture annulée)
+const restOf = d => d.type === 'FAC' && d.status === 'sent' ? d.total_ttc - (d.paid_amount || 0) : 0;
 const ST = {draft: ['Brouillon', 'neutral'], issued: ['À encaisser', 'info'], late: ['Échéance passée', 'warn'], quote: ['Devis envoyé', 'info'],
-  accepted: ['Devis accepté', 'good'], expired: ['Devis expiré', 'muted'], cancelled: ['Annulé', 'muted']};
+  accepted: ['Devis accepté', 'good'], expired: ['Devis expiré', 'muted'], cancelled: ['Annulé', 'muted'],
+  paid: ['Payée', 'good'], deposit: ['Acompte reçu', 'info'], partial: ['Payée en partie', 'info']};
+const METHODS = ['Wave', 'Orange Money', 'Free Money', 'Virement', 'Espèces', 'Chèque', 'Carte'];
 const pill = s => `<span class="pill ${ST[s][1]}">${ST[s][0]}</span>`;
 const clientOf = id => state.clients.find(c => c.id === id);
 const cName = id => clientOf(id)?.name || 'Client supprimé';
@@ -142,7 +149,10 @@ function vHome() {
   const p = state.profile, nc = state.clients.length, nt = state.catalog.length, nd = state.docs.length;
   const month = today().slice(0, 7);
   const billed = state.docs.filter(d => d.type === 'FAC' && d.status === 'sent' && d.issue_date.slice(0, 7) === month).reduce((a, d) => a + toXOF(d.currency, d.total_ttc), 0);
-  const late = state.docs.filter(d => stOf(d) === 'late').length, drafts = state.docs.filter(d => d.status === 'draft').length;
+  const curOf = Object.fromEntries(state.docs.map(d => [d.id, d.currency]));
+  const cashed = state.payments.filter(x => x.paid_at.slice(0, 7) === month).reduce((a, x) => a + toXOF(curOf[x.document_id], x.amount), 0);
+  const due = state.docs.reduce((a, d) => a + toXOF(d.currency, restOf(d)), 0), unpaid = state.docs.filter(d => restOf(d) > 0).length;
+  const lateDocs = state.docs.filter(d => stOf(d) === 'late'), late = lateDocs.length, drafts = state.docs.filter(d => d.status === 'draft').length;
   const step = (done, title, sub, act) => `<div class="step ${done ? 'done' : ''}"><span class="dot">${done ? '✓' : '·'}</span>
     <div class="txt"><b>${title}</b><small>${sub}</small></div>${act || ''}</div>`;
   const started = Boolean(p.phone_pay && p.job) && nc > 0 && nt > 0 && nd > 0;
@@ -151,9 +161,9 @@ function vHome() {
   <div class="stack">
     <div class="kpis">
       <div class="kpi"><span class="lbl">Facturé ce mois</span><span class="val">${num(billed)} <small>FCFA</small></span><span class="sub">${p.goal_xof ? `objectif ${num(p.goal_xof)} FCFA` : 'factures validées'}</span></div>
-      <div class="kpi"><span class="lbl">Échéances passées</span><span class="val">${late}</span><span class="sub">facture${late > 1 ? 's' : ''} à relancer</span></div>
+      <div class="kpi"><span class="lbl">Encaissé ce mois</span><span class="val">${num(cashed)} <small>FCFA</small></span><span class="sub">paiements enregistrés</span></div>
+      <div class="kpi"><span class="lbl">Reste à encaisser</span><span class="val">${num(due)} <small>FCFA</small></span><span class="sub">${unpaid} facture${unpaid > 1 ? 's' : ''}${late ? ` · ${late} en retard` : ''}</span></div>
       <div class="kpi"><span class="lbl">Brouillons</span><span class="val">${drafts}</span><span class="sub">à valider</span></div>
-      <div class="kpi"><span class="lbl">Clients</span><span class="val">${nc}</span><span class="sub">enregistrés</span></div>
     </div>
     ${started ? '' : `<section class="card"><h2>Pour bien démarrer</h2><div class="steps">
       ${step(true, 'Créer votre compte', 'C’est fait.')}
@@ -162,26 +172,29 @@ function vHome() {
       ${step(nt > 0, 'Ajouter vos tarifs habituels', nt ? `${nt} prestation${nt > 1 ? 's' : ''} enregistrée${nt > 1 ? 's' : ''}.` : 'Leur prix se remplira tout seul dans vos factures.', `<button class="btn sm" data-act="catNew">+ Tarif</button>`)}
       ${step(nd > 0, 'Créer votre premier devis ou facture', nd ? 'C’est parti !' : 'Le numéro est attribué automatiquement à la validation.', `<button class="btn sm" data-act="new" data-type="DEV">+ Devis</button>`)}
     </div></section>`}
+    ${late ? `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>À relancer</h2><button class="btn ghost sm" data-act="filter" data-f="late" data-go="1">Tout voir</button></div>
+      <div class="tablewrap">${docTable(lateDocs.slice(0, 5))}</div></section>` : ''}
     ${nd ? `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Derniers documents</h2><button class="btn ghost sm" data-act="go" data-view="docs">Tout voir</button></div>
       <div class="tablewrap">${docTable(state.docs.slice(0, 5))}</div></section>` : ''}
-    <p class="note">Bêta : l’enregistrement des paiements et les liens Wave / Orange Money arrivent à la prochaine étape.</p>
+    <p class="note">Bêta : les liens de paiement Wave / Orange Money et les relances automatiques arrivent aux prochaines étapes.</p>
   </div>`;
 }
 
 /* ---------- Liste des documents ---------- */
-const FILTERS = [['all', 'Tous'], ['FAC', 'Factures'], ['DEV', 'Devis'], ['draft', 'Brouillons'], ['late', 'Échéance passée']];
+const FILTERS = [['all', 'Tous'], ['FAC', 'Factures'], ['DEV', 'Devis'], ['draft', 'Brouillons'], ['unpaid', 'À encaisser'], ['late', 'Échéance passée'], ['paid', 'Payées']];
 function matchFilter(d, f) {
   if (f === 'all') return true;
   if (f === 'FAC' || f === 'DEV') return d.type === f;
   if (f === 'draft') return d.status === 'draft';
+  if (f === 'unpaid') return restOf(d) > 0;
   return stOf(d) === f;
 }
 function docTable(list) {
-  return `<table class="list"><thead><tr><th>N°</th><th>Client</th><th class="hide-sm">Date</th><th class="hide-sm">Échéance</th><th class="num">Montant</th><th>Statut</th></tr></thead>
+  return `<table class="list"><thead><tr><th>N°</th><th>Client</th><th class="hide-sm">Date</th><th class="hide-sm">Échéance</th><th class="num">Montant</th><th class="num hide-sm">Reste dû</th><th>Statut</th></tr></thead>
     <tbody>${list.map(d => `<tr data-act="open" data-id="${d.id}" tabindex="0">
       <td class="mono">${esc(docLabel(d))}</td><td class="cl">${esc(cName(d.client_id))}</td>
       <td class="hide-sm">${fmtDate(d.issue_date)}</td><td class="hide-sm">${fmtDate(d.due_date)}</td>
-      <td class="num">${amtShort(d.currency, d.total_ttc)}</td><td>${pill(stOf(d))}</td></tr>`).join('')}</tbody></table>`;
+      <td class="num">${amtShort(d.currency, d.total_ttc)}</td><td class="num hide-sm">${restOf(d) > 0 ? amtShort(d.currency, restOf(d)) : '—'}</td><td>${pill(stOf(d))}</td></tr>`).join('')}</tbody></table>`;
 }
 function docList() {
   const q = ui.q.trim().toLowerCase();
@@ -213,6 +226,15 @@ function documentText(d, co, c) {
     + `${d.due_date ? (dev ? `, valable jusqu’au ${fmtDate(d.due_date)}` : `, à régler avant le ${fmtDate(d.due_date)}`) : ''}.${dep}\n\n${pay}\n\nMerci pour votre confiance,\n${co.name || ''}`;
 }
 
+function reminderText(d, co, c) {
+  const rest = restOf(d), past = d.due_date && d.due_date < today();
+  const pay = isEur(d.currency) ? 'Règlement par virement bancaire.' : `Vous pouvez régler par Wave ou Orange Money au ${co.phone_pay || '[votre numéro]'}.`;
+  return `Bonjour ${c.contact || c.name || ''},\n\nPetit rappel concernant ma facture ${d.number} du ${fmtDate(d.issue_date)}, d’un montant de ${amt(d.currency, d.total_ttc)}`
+    + `${d.due_date ? (past ? `, arrivée à échéance le ${fmtDate(d.due_date)}` : `, à régler avant le ${fmtDate(d.due_date)}`) : ''}.`
+    + `${d.paid_amount > 0 ? ` Merci pour le règlement de ${amt(d.currency, d.paid_amount)} déjà reçu : il reste ${amt(d.currency, rest)} à payer.` : ''}`
+    + `\n\n${pay}\n\nSi le paiement est déjà parti, merci de ne pas tenir compte de ce message.\n\nBien cordialement,\n${co.name || ''}`;
+}
+
 function paper(d, co, c) {
   const dev = d.type === 'DEV', cur = d.currency;
   return `<article class="paper" aria-label="Aperçu du document">
@@ -223,7 +245,7 @@ function paper(d, co, c) {
       <div class="p-title"><h3>${dev ? 'DEVIS' : 'FACTURE'}</h3>
         <dl><dt>N°</dt><dd>${esc(d.number || 'attribué à la validation')}</dd><dt>Date</dt><dd>${fmtDate(d.issue_date)}</dd>
         ${d.due_date ? `<dt>${dev ? 'Valable jusqu’au' : 'Échéance'}</dt><dd>${fmtDate(d.due_date)}</dd>` : ''}</dl>
-        ${d.status === 'cancelled' ? '<span class="stamp void">ANNULÉ</span>' : ''}</div>
+        ${d.status === 'cancelled' ? '<span class="stamp void">ANNULÉ</span>' : stOf(d) === 'paid' ? '<span class="stamp">PAYÉE</span>' : ''}</div>
     </div>
     <div class="p-mid"><div class="p-cl"><div class="lbl">${dev ? 'Destinataire' : 'Facturé à'}</div><b>${esc(c.name)}</b>
       <div>${c.contact ? 'À l’attention de ' + esc(c.contact) + '<br>' : ''}${esc(c.address || '')}${c.phone ? '<br>' + esc(c.phone) : ''}${c.ninea ? '<br>NINEA : ' + esc(c.ninea) : ''}</div></div></div>
@@ -234,6 +256,7 @@ function paper(d, co, c) {
       ${d.tva ? `<dt>Total HT</dt><dd>${amt(cur, d.total_ht)}</dd><dt>TVA 18 %</dt><dd>${amt(cur, d.tva_amount)}</dd>` : ''}
       <dt class="ttc">${d.tva ? 'Total TTC' : 'Total'}</dt><dd class="ttc">${amt(cur, d.total_ttc)}</dd>
       ${d.deposit_amount ? `<dt>Acompte demandé (${d.deposit_pct} %)</dt><dd>${amt(cur, d.deposit_amount)}</dd>` : ''}
+      ${d.paid_amount > 0 && d.status === 'sent' ? `<dt>Déjà réglé</dt><dd>${amt(cur, d.paid_amount)}</dd><dt class="due">Reste à payer</dt><dd class="due">${amt(cur, restOf(d))}</dd>` : ''}
     </dl></div>
     <p class="p-words">Arrêté${dev ? ' le présent devis' : 'e la présente facture'} à la somme de <b>${sommeEnLettres(cur, d.total_ttc)} (${amt(cur, d.total_ttc)})</b>${d.tva ? ' TTC' : ''}.${d.tva ? '' : ' TVA non applicable.'}</p>
     <div class="p-foot">
@@ -251,12 +274,15 @@ function vDoc() {
   const co = d.snapshot?.company || state.profile, c = d.snapshot?.client || clientOf(d.client_id) || {name: 'Client supprimé'};
   const conv = d.converted_to && state.docs.find(x => x.id === d.converted_to);
   const from = state.docs.find(x => x.converted_to === d.id);
-  const msg = d.number ? documentText(d, co, c) : '';
+  const rest = restOf(d), pays = d.payments || [];
+  const msg = !d.number ? '' : ui.share === 'remind' ? reminderText(d, co, c) : documentText(d, co, c);
   const confirm = {
     finalize: [`Valider ${dev ? 'ce devis' : 'cette facture'} ? ${dev ? 'Il' : 'Elle'} recevra son numéro définitif et ne pourra plus être modifié${dev ? '' : 'e'}.`, 'finalize', 'Oui, valider', 'primary'],
     del: ['Supprimer ce brouillon ? Cette action est définitive.', 'del', 'Oui, supprimer', 'danger solid'],
-    cancel: [`Annuler ${esc(d.number)} ? ${dev ? 'Il' : 'Elle'} restera dans l’historique avec la mention « Annulé ».`, 'cancelDoc', 'Oui, annuler', 'danger solid']
+    cancel: [`Annuler ${esc(d.number)} ? ${dev ? 'Il' : 'Elle'} restera dans l’historique avec la mention « Annulé ».`, 'cancelDoc', 'Oui, annuler', 'danger solid'],
+    pdel: ['Supprimer ce paiement ? Le reste à payer sera recalculé.', 'payDel', 'Oui, supprimer', 'danger solid']
   }[ui.confirm];
+  const p = ui.pay;
 
   return `<div class="head noprint"><div><button class="btn ghost sm" data-act="go" data-view="docs">← Factures et devis</button>
       <h1 style="margin-top:8px"><span class="mono" style="font-size:.8em">${esc(docLabel(d))}</span></h1>
@@ -264,21 +290,36 @@ function vDoc() {
     <div class="actions">
       ${draft ? `<button class="btn primary" data-act="askConfirm" data-c="finalize">Valider et numéroter</button><button class="btn" data-act="edit">Modifier</button>` : ''}
       ${dev && d.status === 'sent' && !d.converted_to ? `<button class="btn primary" data-act="convert">Le client accepte : créer la facture</button>` : ''}
-      ${d.status === 'sent' ? `<button class="btn" data-act="print">Télécharger le PDF</button><button class="btn" data-act="share">Envoyer par WhatsApp</button>` : ''}
+      ${rest > 0 ? `<button class="btn primary" data-act="payNew">Enregistrer un paiement</button>` : ''}
+      ${d.status === 'sent' ? `<button class="btn" data-act="print">Télécharger le PDF</button><button class="btn" data-act="share" data-mode="send">Envoyer par WhatsApp</button>` : ''}
+      ${rest > 0 && (d.due_date && d.due_date < today() || d.paid_amount > 0) ? `<button class="btn" data-act="share" data-mode="remind">Relancer</button>` : ''}
       ${draft ? '' : `<button class="btn" data-act="dup">Dupliquer</button>`}
       ${draft ? `<button class="btn danger" data-act="askConfirm" data-c="del">Supprimer</button>` : ''}
-      ${d.status === 'sent' ? `<button class="btn danger" data-act="askConfirm" data-c="cancel">Annuler</button>` : ''}
+      ${d.status === 'sent' && !(d.paid_amount > 0) ? `<button class="btn danger" data-act="askConfirm" data-c="cancel">Annuler</button>` : ''}
     </div></div>
   <div class="stack">
     ${confirm ? `<div class="panel alert noprint"><b>${confirm[0]}</b>
       <div class="row"><button class="btn ${confirm[3]}" data-act="${confirm[1]}" ${ui.busy ? 'disabled' : ''}>${confirm[2]}</button><button class="btn" data-act="cancelConfirm">Retour</button></div></div>` : ''}
-    ${ui.err ? `<div class="err noprint" role="alert">${esc(ui.err)}</div>` : ''}
+    ${ui.err && !p ? `<div class="err noprint" role="alert">${esc(ui.err)}</div>` : ''}
     ${draft ? `<p class="note noprint">Brouillon : vous pouvez encore le modifier. Validez-le pour lui donner son numéro, puis téléchargez le PDF ou envoyez-le par WhatsApp.</p>` : ''}
-    ${ui.share ? `<div class="panel noprint"><h2>Message d’envoi</h2>
+    ${p ? `<form class="panel noprint" id="payform"><h2>Enregistrer un paiement</h2>
+      <p class="muted" style="margin:0">Reste à payer : <b>${amt(d.currency, rest)}</b>${d.deposit_amount > d.paid_amount ? ` · acompte attendu : ${amt(d.currency, d.deposit_amount - d.paid_amount)}` : ''}</p>
+      <div class="fgrid">
+        <label class="field">Montant reçu (${isEur(d.currency) ? '€' : 'FCFA'})<input type="text" id="p-amount" inputmode="decimal" value="${esc(decimal(p.amount))}" required></label>
+        <label class="field">Moyen de paiement<select id="p-method">${METHODS.map(m => `<option ${m === p.method ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+        <label class="field">Date<input type="date" id="p-date" value="${esc(p.paid_at)}" max="${today()}"></label>
+        <label class="field">Note (facultatif)<input type="text" id="p-note" value="${esc(p.note)}" placeholder="Ex. : référence Wave"></label>
+      </div>
+      ${ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : ''}
+      <div class="row"><button type="submit" class="btn primary" ${ui.busy ? 'disabled' : ''}>Enregistrer</button><button type="button" class="btn" data-act="payCancel">Annuler</button></div></form>` : ''}
+    ${pays.length ? `<section class="card noprint"><h2>Paiements reçus</h2><div class="tablewrap"><table class="list"><thead><tr><th>Date</th><th>Moyen</th><th class="hide-sm">Note</th><th class="num">Montant</th><th></th></tr></thead>
+      <tbody>${pays.map(x => `<tr><td>${fmtDate(x.paid_at)}</td><td>${esc(x.method)}</td><td class="hide-sm">${esc(x.note)}</td><td class="num">${amt(d.currency, x.amount)}</td>
+        <td class="num"><button class="btn ghost sm" data-act="payAskDel" data-id="${x.id}" aria-label="Supprimer ce paiement">Supprimer</button></td></tr>`).join('')}</tbody></table></div></section>` : ''}
+    ${ui.share ? `<div class="panel noprint"><h2>${ui.share === 'remind' ? 'Message de relance' : 'Message d’envoi'}</h2>
       <textarea id="relmsg" class="relmsg" aria-label="Message">${esc(msg)}</textarea>
       <div class="row"><a class="btn primary" id="walink" href="${esc(waLink(c.phone, msg))}" target="_blank" rel="noopener">Ouvrir WhatsApp</a>
         <button class="btn" data-act="copy">Copier le message</button><button class="btn ghost" data-act="closeShare">Fermer</button></div>
-      <small class="muted">Destinataire : ${esc(c.phone || 'aucun numéro enregistré')}. Pensez à joindre le PDF téléchargé dans la conversation.</small></div>` : ''}
+      <small class="muted">Destinataire : ${esc(c.phone || 'aucun numéro enregistré')}.${ui.share === 'remind' ? '' : ' Pensez à joindre le PDF téléchargé dans la conversation.'}</small></div>` : ''}
     ${paper(d, co, c)}
   </div>`;
 }
@@ -448,7 +489,7 @@ function render(scroll) {
   if (scroll) window.scrollTo(0, 0);
 }
 
-function go(view, extra = {}) { Object.assign(ui, {view, err: '', info: '', confirm: null, catDraft: null, share: false}, extra); render(true); }
+function go(view, extra = {}) { Object.assign(ui, {view, err: '', info: '', confirm: null, catDraft: null, share: false, pay: null}, extra); render(true); }
 
 // Exécute une action réseau en affichant l'état « en cours » et les erreurs
 async function run(fn) {
@@ -469,7 +510,7 @@ async function openDoc(id) {
 }
 function refreshSummary(d) {
   const row = {id: d.id, type: d.type, number: d.number, status: d.status, currency: d.currency, client_id: d.client_id, issue_date: d.issue_date,
-    due_date: d.due_date, total_ttc: d.total_ttc, converted_to: d.converted_to, created_at: d.created_at};
+    due_date: d.due_date, total_ttc: d.total_ttc, deposit_amount: d.deposit_amount, paid_amount: d.paid_amount, converted_to: d.converted_to, created_at: d.created_at};
   state.docs = state.docs.some(x => x.id === d.id) ? state.docs.map(x => x.id === d.id ? row : x) : [row, ...state.docs];
 }
 
@@ -486,7 +527,7 @@ const acts = {
     startDraft(el.dataset.type);
   },
   open: el => openDoc(el.dataset.id),
-  filter: el => { ui.filter = el.dataset.f; render(); },
+  filter: el => { ui.filter = el.dataset.f; el.dataset.go ? go('docs') : render(); },
   askConfirm: el => { ui.confirm = el.dataset.c; ui.err = ''; render(); },
   cancelConfirm: () => { ui.confirm = null; render(); },
   edit: () => { const d = ui.doc; startDraft(null, d, {id: d.id, issue_date: d.issue_date, due_date: d.due_date || '', tva: d.tva}); },
@@ -518,7 +559,19 @@ const acts = {
     const title = document.title; document.title = ui.doc.number || 'Facture SN';
     window.print(); document.title = title;
   },
-  share: () => { ui.share = !ui.share; render(); },
+  share: el => { ui.share = ui.share === el.dataset.mode ? false : el.dataset.mode; ui.pay = null; render(); },
+  payNew: () => {
+    const d = ui.doc, rest = restOf(d), dep = d.deposit_amount - d.paid_amount;
+    ui.pay = {amount: toMajor(d.currency, dep > 0 && dep < rest ? dep : rest), method: isEur(d.currency) ? 'Virement' : 'Wave', paid_at: today(), note: ''};
+    ui.share = false; ui.confirm = null; ui.err = ''; render(); $('#p-amount')?.focus();
+  },
+  payCancel: () => { ui.pay = null; ui.err = ''; render(); },
+  payAskDel: el => { ui.payDel = el.dataset.id; ui.confirm = 'pdel'; ui.pay = null; ui.err = ''; render(); window.scrollTo(0, 0); },
+  payDel: () => run(async () => {
+    await db.deletePayment(ui.payDel);
+    state.payments = state.payments.filter(x => x.id !== ui.payDel);
+    ui.doc = await db.getDocument(ui.doc.id); refreshSummary(ui.doc); ui.confirm = null; toast('Paiement supprimé');
+  }),
   closeShare: () => { ui.share = false; render(); },
   copy: () => {
     const ta = $('#relmsg');
@@ -640,6 +693,19 @@ document.addEventListener('submit', e => {
       ui.view = 'doc'; ui.draft = null; toast('Brouillon enregistré');
     });
   }
+  if (id === 'payform') {
+    const d = ui.doc, p = ui.pay;
+    Object.assign(p, {amount: parseNum(val('p-amount')), method: val('p-method'), paid_at: val('p-date') || today(), note: val('p-note')});
+    const amount = toMinor(d.currency, p.amount);
+    if (!(amount > 0)) { ui.err = 'Indiquez le montant reçu.'; return render(); }
+    if (amount > restOf(d)) { ui.err = `Le montant dépasse le reste à payer (${amt(d.currency, restOf(d))}).`; return render(); }
+    run(async () => {
+      const row = await db.addPayment({document_id: d.id, amount, method: p.method, paid_at: p.paid_at, note: p.note});
+      state.payments = [...state.payments, row];
+      ui.doc = await db.getDocument(d.id); refreshSummary(ui.doc); ui.pay = null;
+      toast(restOf(ui.doc) > 0 ? 'Paiement enregistré' : 'Paiement enregistré : facture soldée');
+    });
+  }
   if (id === 'clientform') {
     const c = ui.clientDraft;
     ['name', 'contact', 'phone', 'email', 'address', 'ninea'].forEach(k => c[k] = val('k-' + k));
@@ -671,7 +737,7 @@ async function boot() {
     if (event === 'PASSWORD_RECOVERY') ui.recovery = true;
     const had = state.session?.user?.id, now = session?.user?.id;
     state.session = session;
-    if (!now) { Object.assign(state, {profile: null, clients: [], catalog: [], docs: [], loaded: false, loadErr: ''}); Object.assign(ui, {view: 'home', doc: null, draft: null}); render(); }
+    if (!now) { Object.assign(state, {profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''}); Object.assign(ui, {view: 'home', doc: null, draft: null}); render(); }
     else if (now !== had) { state.loaded = false; render(); loadAll(); }
   });
   try { state.session = await db.getSession(); } catch (e) { ui.err = humanError(e); }

@@ -140,7 +140,7 @@ Le webhook doit être **idempotent** : si l'agrégateur l'appelle deux fois, le 
 | 0. Préparation | Projet Supabase, dépôt GitHub, landing page, prototype, Cloudflare Pages | ✅ fait |
 | 1. Socle | Connexion, profil, clients, tarifs, installation sur téléphone | ✅ fait |
 | 2. Documents | Devis, factures, acomptes, remises, euros, numérotation, aperçu, PDF par impression, envoi WhatsApp | ✅ fait |
-| 3. Encaissement | Saisie des paiements, puis liens de paiement et webhook | à faire |
+| 3. Encaissement | Saisie des paiements ✅ fait ; liens de paiement et webhook à faire | en cours |
 | 4. Relances et PDF | Liste des retards, message WhatsApp prêt, PDF | à faire |
 | 5. Bêta fermée | 20 à 30 freelances de la liste d'attente, corrections | à faire |
 | 6. Lancement | Offre Pro, nom de domaine, connexion par téléphone (SMS ou WhatsApp), v1.1 | à faire |

@@ -347,6 +347,74 @@ grant execute on function public.save_document(jsonb, jsonb), public.finalize_do
   public.cancel_document(uuid), public.convert_quote(uuid) to authenticated;
 
 -- ===========================================================================
+-- Étape 3 : paiements reçus (saisis à la main : Wave, Orange Money, virement…)
+-- ===========================================================================
+alter table public.documents add column if not exists paid_amount bigint not null default 0;
+
+create table if not exists public.payments (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  document_id  uuid not null references public.documents (id) on delete cascade,
+  amount       bigint not null check (amount > 0),     -- dans la devise de la facture (FCFA ou centimes)
+  method       text not null check (method in ('Wave', 'Orange Money', 'Free Money', 'Virement', 'Espèces', 'Chèque', 'Carte')),
+  paid_at      date not null default current_date,
+  note         text not null default '',
+  created_at   timestamptz not null default now()
+);
+create index if not exists payments_document_id_idx on public.payments (document_id);
+
+-- Un paiement ne vise qu'une facture validée, non annulée, et ne dépasse pas le reste à payer
+create or replace function public.payment_check()
+returns trigger language plpgsql set search_path = '' as $$
+declare
+  d public.documents;
+begin
+  select * into d from public.documents where id = new.document_id and user_id = auth.uid() for update;
+  if not found then raise exception 'Facture introuvable.'; end if;
+  if d.type <> 'FAC' or d.status <> 'sent' then raise exception 'Un paiement ne peut être enregistré que sur une facture validée.'; end if;
+  if new.amount > d.total_ttc - d.paid_amount then raise exception 'Le montant dépasse le reste à payer.'; end if;
+  return new;
+end $$;
+
+-- Tient à jour le total payé de la facture (colonne non modifiable par l'utilisateur)
+create or replace function public.payments_changed()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_doc uuid := coalesce(new.document_id, old.document_id);
+begin
+  update public.documents set paid_amount = (select coalesce(sum(amount), 0) from public.payments where document_id = v_doc)
+  where id = v_doc;
+  return null;
+end $$;
+
+drop trigger if exists payments_check on public.payments;
+create trigger payments_check before insert on public.payments for each row execute function public.payment_check();
+drop trigger if exists payments_changed on public.payments;
+create trigger payments_changed after insert or delete on public.payments for each row execute function public.payments_changed();
+
+alter table public.payments enable row level security;
+drop policy if exists "Paiements : les siens" on public.payments;
+create policy "Paiements : les siens" on public.payments
+  for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+revoke all on public.payments from anon;
+revoke all on public.payments from authenticated;
+grant select, delete on public.payments to authenticated;
+grant insert (document_id, amount, method, paid_at, note) on public.payments to authenticated;
+
+-- Une facture qui a reçu des paiements ne s'annule pas tant qu'ils existent
+create or replace function public.cancel_document(p_id uuid)
+returns uuid language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (select 1 from public.documents where id = p_id and user_id = auth.uid() and paid_amount > 0) then
+    raise exception 'Cette facture a déjà reçu des paiements : supprimez-les avant de l’annuler.';
+  end if;
+  update public.documents set status = 'cancelled' where id = p_id and user_id = auth.uid() and status = 'sent';
+  if not found then raise exception 'Seul un document validé peut être annulé.'; end if;
+  return p_id;
+end $$;
+
+-- ===========================================================================
 -- Connexion par numéro de téléphone, code remis par WhatsApp (sans SMS payant)
 -- 1. Supabase Auth crée le code et appelle send_sms_hook, qui le range dans otp_outbox.
 -- 2. Le freelance écrit au numéro WhatsApp de Facture SN ; le téléphone passerelle

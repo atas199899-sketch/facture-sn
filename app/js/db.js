@@ -60,13 +60,20 @@ export const deleteItem = async id => ok(await sb.from('catalog_items').delete()
 /* ---------- Devis et factures ---------- */
 // Montants en entiers : francs CFA, ou centimes pour les documents en euros.
 // Numéro, état et totaux sont calculés par la base (voir supabase/schema.sql).
-const DOC_SUMMARY = 'id, type, number, status, currency, client_id, issue_date, due_date, total_ttc, converted_to, created_at';
+const DOC_SUMMARY = 'id, type, number, status, currency, client_id, issue_date, due_date, total_ttc, deposit_amount, paid_amount, converted_to, created_at';
 export const listDocuments = async () => ok(await sb.from('documents').select(DOC_SUMMARY).order('created_at', {ascending: false}));
-export const getDocument = async id => ok(await sb.from('documents').select('*, lines:document_lines(*)').eq('id', id)
-  .order('position', {referencedTable: 'document_lines'}).single());
+export const getDocument = async id => ok(await sb.from('documents').select('*, lines:document_lines(*), payments(*)').eq('id', id)
+  .order('position', {referencedTable: 'document_lines'}).order('paid_at', {referencedTable: 'payments'}).single());
 export const summaryOf = async id => ok(await sb.from('documents').select(DOC_SUMMARY).eq('id', id).single());
 export const saveDocument = async (doc, lines) => ok(await sb.rpc('save_document', {p_doc: doc, p_lines: lines}));
 export const finalizeDocument = async id => ok(await sb.rpc('finalize_document', {p_id: id}));
 export const cancelDocument = async id => ok(await sb.rpc('cancel_document', {p_id: id}));
 export const convertQuote = async id => ok(await sb.rpc('convert_quote', {p_id: id}));
 export const deleteDocument = async id => ok(await sb.from('documents').delete().eq('id', id));
+
+/* ---------- Paiements reçus ---------- */
+// La base vérifie la facture et le reste à payer, puis met à jour documents.paid_amount.
+const PAYMENT_FIELDS = ['document_id', 'amount', 'method', 'paid_at', 'note'];
+export const addPayment = async p => ok(await sb.from('payments').insert(pick(p, PAYMENT_FIELDS)).select().single());
+export const deletePayment = async id => ok(await sb.from('payments').delete().eq('id', id));
+export const listPayments = async () => ok(await sb.from('payments').select('id, document_id, amount, paid_at'));
