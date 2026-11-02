@@ -133,7 +133,7 @@ const acts = {
   go: el => { ui.view = el.dataset.view; render(); window.scrollTo(0, 0); },
   reload: () => { state.data = null; render(); load(); },
   plans: el => { ui.plan = el.dataset.f; render(); },
-  logout: async () => { await sb.auth.signOut(); },
+  logout: async () => { await sb.auth.signOut({scope: 'local'}).catch(() => {}); onSession(null); },
   plan: async el => {
     if (ui.busy) return;
     ui.busy = true; render();
@@ -163,13 +163,26 @@ document.addEventListener('submit', async e => {
 });
 
 /* ---------- Démarrage ---------- */
-async function onSession(session) {
+async function onSession(session, event) {
   const had = state.session?.user?.id;
   state.session = session;
   if (!session) { Object.assign(state, {allowed: false, data: null}); render(); return; }
   if (session.user.id === had) return;
+  if (event === 'INITIAL_SESSION') await checkIdle(); else stamp();
+  if (!state.session) return;
   state.allowed = await rpc('is_admin').catch(() => false);
   render();
   if (state.allowed) load();
 }
-sb.auth.onAuthStateChange((_event, session) => { setTimeout(() => onSession(session)); });
+sb.auth.onAuthStateChange((event, session) => { setTimeout(() => onSession(session, event)); });
+
+// Espace sensible : déconnexion après 12 heures sans utilisation
+const IDLE_MS = 12 * 3600e3, IDLE_KEY = 'facturesn-admin-last-active';
+const stamp = () => { try { localStorage.setItem(IDLE_KEY, String(Date.now())); } catch {} };
+async function checkIdle() {
+  let last = 0; try { last = +localStorage.getItem(IDLE_KEY) || 0; } catch {}
+  if (state.session && last && Date.now() - last > IDLE_MS) { await acts.logout(); ui.err = 'Déconnecté après une longue absence. Reconnectez-vous.'; render(); return; }
+  stamp();
+}
+['click', 'keydown'].forEach(t => document.addEventListener(t, stamp, {passive: true}));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });

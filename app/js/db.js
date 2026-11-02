@@ -20,7 +20,14 @@ export const getSession = async () => ok(await sb.auth.getSession()).session;
 export const onAuthChange = cb => sb.auth.onAuthStateChange(cb);
 export const signUp = async (email, password) => ok(await sb.auth.signUp({email, password, options: {emailRedirectTo: backUrl()}}));
 export const signIn = async (email, password) => ok(await sb.auth.signInWithPassword({email, password}));
-export const signOut = async () => ok(await sb.auth.signOut());
+// Déconnexion locale : réussit même si la session a déjà expiré côté serveur
+export const signOut = async () => { await sb.auth.signOut({scope: 'local'}).catch(() => {}); };
+// La session est-elle toujours reconnue par Supabase ? (hors ligne : on la garde)
+export async function sessionValid() {
+  const {data, error} = await sb.auth.getUser();
+  if (!error) return Boolean(data.user);
+  return !(error.status === 401 || error.status === 403 || /session missing|session_not_found|user.*not.*found/i.test(error.message));
+}
 export const sendReset = async email => ok(await sb.auth.resetPasswordForEmail(email, {redirectTo: backUrl()}));
 export const setPassword = async password => ok(await sb.auth.updateUser({password}));
 // Connexion par numéro : Supabase crée le code, la passerelle WhatsApp le remet (voir docs/MACRODROID.md)

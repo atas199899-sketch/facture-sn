@@ -520,7 +520,7 @@ const acts = {
   authMode: el => { ui.authMode = el.dataset.mode; ui.phoneStep = 1; ui.err = ''; ui.info = ''; render(); },
   phoneBack: () => { ui.phoneStep = 1; ui.err = ''; render(); },
   retry: () => { state.loadErr = ''; render(); loadAll(); },
-  logout: () => run(async () => { await db.signOut(); }),
+  logout: () => logout(),
 
   new: el => {
     if (!state.clients.length) { toast('Ajoutez d’abord un client'); acts.clientNew({dataset: {}}); return; }
@@ -730,17 +730,44 @@ document.addEventListener('submit', e => {
 });
 
 /* ---------- Démarrage ---------- */
+/* ---------- Session : déconnexion après une longue absence ---------- */
+const IDLE_DAYS = 7, IDLE_KEY = 'facturesn-last-active';
+const lastActive = () => { try { return +localStorage.getItem(IDLE_KEY) || 0; } catch { return 0; } };
+const markActive = () => { try { localStorage.setItem(IDLE_KEY, String(Date.now())); } catch {} };
+function resetSession() {
+  state.session = null;
+  Object.assign(state, {profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''});
+  Object.assign(ui, {view: 'home', doc: null, draft: null, pay: null, confirm: null, busy: false, err: ''});
+  render();
+}
+async function logout(info = '') {
+  await db.signOut();
+  resetSession(); ui.info = info; render();
+}
+// Au démarrage et au retour sur l'application : trop longtemps sans activité, ou session refusée par Supabase
+async function checkSession() {
+  if (!state.session) return;
+  const last = lastActive();
+  if (last && Date.now() - last > IDLE_DAYS * 864e5) return logout(`Par sécurité, vous avez été déconnecté après ${IDLE_DAYS} jours sans utilisation. Reconnectez-vous.`);
+  if (!(await db.sessionValid())) return logout('Votre session a expiré. Reconnectez-vous.');
+  markActive();
+}
+let markT = 0;
+['click', 'keydown'].forEach(t => document.addEventListener(t, () => { if (state.session && Date.now() - markT > 60e3) { markT = Date.now(); markActive(); } }, {passive: true}));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkSession(); });
+
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   if (!db.configured) return render();
   db.onAuthChange((event, session) => {
     if (event === 'PASSWORD_RECOVERY') ui.recovery = true;
     const had = state.session?.user?.id, now = session?.user?.id;
+    if (!now) { if (had) resetSession(); return; }
     state.session = session;
-    if (!now) { Object.assign(state, {profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''}); Object.assign(ui, {view: 'home', doc: null, draft: null}); render(); }
-    else if (now !== had) { state.loaded = false; render(); loadAll(); }
+    if (now !== had) { if (event === 'SIGNED_IN') markActive(); state.loaded = false; render(); loadAll(); }
   });
   try { state.session = await db.getSession(); } catch (e) { ui.err = humanError(e); }
+  await checkSession();
   if (state.session && !state.loaded) loadAll(); else render();
 }
 boot();
