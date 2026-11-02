@@ -176,8 +176,8 @@ async function onSession(session, event) {
 }
 sb.auth.onAuthStateChange((event, session) => { setTimeout(() => onSession(session, event)); });
 
-// Espace sensible : déconnexion après 12 heures sans utilisation
-const IDLE_MS = 12 * 3600e3, IDLE_KEY = 'facturesn-admin-last-active';
+// Espace sensible : déconnexion après 15 minutes sans utilisation
+const IDLE_MS = 15 * 60e3, IDLE_KEY = 'facturesn-admin-last-active';
 const stamp = () => { try { localStorage.setItem(IDLE_KEY, String(Date.now())); } catch {} };
 async function checkIdle() {
   let last = 0; try { last = +localStorage.getItem(IDLE_KEY) || 0; } catch {}
@@ -186,3 +186,8 @@ async function checkIdle() {
 }
 ['click', 'keydown'].forEach(t => document.addEventListener(t, stamp, {passive: true}));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
+// Page restée ouverte sans y toucher : vérification chaque minute (sans compter comme une activité)
+setInterval(() => {
+  let last = 0; try { last = +localStorage.getItem(IDLE_KEY) || 0; } catch {}
+  if (state.session && last && Date.now() - last > IDLE_MS) checkIdle();
+}, 60e3);
