@@ -458,6 +458,16 @@ do $d$ begin
     create domain public."text/plain" as text;
   end if;
 end $d$;
+-- Titres reçus de la passerelle (24 h), pour l'anti-boucle et le dépannage
+create table if not exists public.gateway_log (
+  id          bigint generated always as identity primary key,
+  title       text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists gateway_log_title_idx on public.gateway_log (title, created_at);
+alter table public.gateway_log enable row level security;
+revoke all on public.gateway_log from anon, authenticated;
+
 drop function if exists public.claim_otp(text, text);
 create function public.claim_otp(p_secret text, p_phone text)
 returns public."text/plain" language plpgsql security definer set search_path = '' as $$
@@ -470,6 +480,13 @@ begin
     perform pg_sleep(1);
     raise exception 'Clé de la passerelle invalide.';
   end if;
+  -- Anti-boucle : WhatsApp republie la notification après notre réponse ; un même titre
+  -- ne reçoit qu'une réponse par minute (texte vide = MacroDroid ne répond pas)
+  if exists (select 1 from public.gateway_log where title = v_title and created_at > now() - interval '1 minute') then
+    return '';
+  end if;
+  delete from public.gateway_log where created_at < now() - interval '1 day';
+  insert into public.gateway_log (title) values (v_title);
   -- Le titre de la notification doit être un numéro : un nom (contact enregistré, pseudo) est refusé
   if v_title !~ '^\s*\+?[0-9 ()\-  ]{8,22}\s*$' then
     return 'Bonjour ! Nous n’avons pas pu lire votre numéro. Écrivez-nous depuis le numéro saisi dans l’application Facture SN.';
