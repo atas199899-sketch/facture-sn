@@ -480,6 +480,10 @@ begin
     perform pg_sleep(1);
     raise exception 'Clé de la passerelle invalide.';
   end if;
+  -- Nos propres réponses (notification « Vous ») ne déclenchent rien
+  if v_title ~ '(Nous n’avons pas pu lire|Pour recevoir un code|Votre code Facture SN)' then
+    return '';
+  end if;
   -- Anti-boucle : WhatsApp republie la notification après notre réponse ; un même titre
   -- ne reçoit qu'une réponse par minute (texte vide = MacroDroid ne répond pas)
   if exists (select 1 from public.gateway_log where title = v_title and created_at > now() - interval '1 minute') then
