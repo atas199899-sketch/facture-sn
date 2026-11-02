@@ -481,7 +481,8 @@ begin
     raise exception 'Clé de la passerelle invalide.';
   end if;
   -- Nos propres réponses (notification « Vous ») ne déclenchent rien
-  if v_title ~ '(Nous n’avons pas pu lire|Pour recevoir un code|Votre code Facture SN)' then
+  if v_title ~ '(Nous n’avons pas pu lire|Pour recevoir un code|Votre code Facture SN)'
+     or lower(btrim(v_title)) in ('vous', 'you', 'moi', 'me') then
     return '';
   end if;
   -- Anti-boucle : WhatsApp republie la notification après notre réponse ; un même titre
