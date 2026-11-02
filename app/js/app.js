@@ -218,12 +218,16 @@ function waLink(phone, text) {
   if (digits.length === 9) digits = '221' + digits;
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
+// Mention « Créé avec Facture SN » sur les documents des comptes gratuits (retirée en Pro)
+const MADE_URL = 'https://facture-sn.pages.dev/?ref=facture';
+const showMade = () => state.profile?.plan !== 'pro';
 function documentText(d, co, c) {
   const dev = d.type === 'DEV';
   const dep = d.deposit_amount ? `\n\nPour démarrer, un acompte de ${d.deposit_pct} % est demandé, soit ${amt(d.currency, d.deposit_amount)}.` : '';
   const pay = isEur(d.currency) ? 'Règlement par virement bancaire.' : `Vous pouvez régler par Wave ou Orange Money au ${co.phone_pay || '[votre numéro]'}.`;
   return `Bonjour ${c.contact || c.name || ''},\n\nVoici ${dev ? 'mon devis' : 'ma facture'} ${d.number} d’un montant de ${amt(d.currency, d.total_ttc)}`
-    + `${d.due_date ? (dev ? `, valable jusqu’au ${fmtDate(d.due_date)}` : `, à régler avant le ${fmtDate(d.due_date)}`) : ''}.${dep}\n\n${pay}\n\nMerci pour votre confiance,\n${co.name || ''}`;
+    + `${d.due_date ? (dev ? `, valable jusqu’au ${fmtDate(d.due_date)}` : `, à régler avant le ${fmtDate(d.due_date)}`) : ''}.${dep}\n\n${pay}\n\nMerci pour votre confiance,\n${co.name || ''}`
+    + (showMade() ? `\n\n—\n${dev ? 'Devis créé' : 'Facture créée'} avec Facture SN, gratuit pour les freelances : ${MADE_URL}` : '');
 }
 
 function reminderText(d, co, c) {
@@ -263,6 +267,7 @@ function paper(d, co, c) {
       <div class="p-sec"><div class="lbl">Paiement</div><ul>${isEur(cur) ? '<li>Virement bancaire (coordonnées sur demande)</li>' : `<li>Wave et Orange Money : ${esc(co.phone_pay || '—')}</li><li>Virement ou espèces</li>`}</ul></div>
       ${d.notes || co.mentions ? `<div class="p-sec"><div class="lbl">Conditions</div><div class="muted">${esc(d.notes)}${d.notes && co.mentions ? '<br>' : ''}${esc(co.mentions)}</div></div>` : ''}
     </div>
+    ${showMade() ? `<p class="p-made">${dev ? 'Devis créé' : 'Facture créée'} avec <a href="${MADE_URL}" target="_blank" rel="noopener">Facture SN</a> · facturation gratuite pour les freelances · facture-sn.pages.dev</p>` : ''}
   </article>`;
 }
 
