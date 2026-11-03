@@ -51,6 +51,8 @@ nav .ns{display:none}
 .brand-box{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;padding:12px}
 .brand-show{min-height:84px;display:grid;place-items:center;background:#fff;border-radius:8px;border:1px dashed var(--line);padding:8px}
 .brand-show img{max-width:100%;max-height:90px}
+.cut-show{min-height:150px}.cut-show img{max-height:200px}
+input[type=range]{width:100%;accent-color:var(--accent)}
 .brand-show input[type=color]{width:64px;height:44px;border:0;background:none;cursor:pointer}
 .sigpad{width:100%;max-width:600px;aspect-ratio:600/220;touch-action:none;background:#fff;border:1px dashed var(--muted);border-radius:8px;cursor:crosshair}
 .plan-card .price{font:700 30px var(--f-display);margin:4px 0}

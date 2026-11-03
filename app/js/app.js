@@ -9,7 +9,7 @@ const $ = s => document.querySelector(s);
 
 const state = {session: null, profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''};
 const ui = {view: 'home', authMode: 'login', err: '', info: '', busy: false, clientDraft: null, catDraft: null, confirm: null, recovery: false,
-  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null, delAsk: false, sigPad: false, imgKey: null, pdf: null};
+  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null, delAsk: false, sigPad: false, imgKey: null, cut: null, pdf: null};
 
 /* ---------- Messages d'erreur lisibles ---------- */
 function humanError(e) {
@@ -550,7 +550,7 @@ function brandCard(p) {
     <div class="row">${acts}${p[k] ? `<button class="btn sm ghost" data-act="imgDel" data-k="${k}" ${ui.busy ? 'disabled' : ''}>Retirer</button>` : ''}</div></div>`;
   const pick = k => `<button class="btn sm" data-act="imgPick" data-k="${k}" ${off}>Importer une image</button>`;
   return `<section class="card stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Logo, signature et cachet</h2>${pro ? '<span class="pill good">Pro</span>' : '<span class="pill neutral">Pro</span>'}</div>
-    <p class="muted" style="margin:0">${pro ? 'Ils apparaissent sur vos devis et factures. Pour la signature et le cachet, une photo sur papier blanc suffit : le fond blanc est retiré automatiquement.'
+    <p class="muted" style="margin:0">${pro ? 'Ils apparaissent sur vos devis et factures. Pour la signature et le cachet, une photo suffit : le fond est retiré automatiquement et vous vérifiez le résultat avant d’enregistrer.'
       : 'Avec la formule Pro, ajoutez votre logo, votre couleur, votre signature et votre cachet sur vos devis et factures. <a href="#" data-act="go" data-view="pro">Passer en Pro</a>'}</p>
     <div class="brand-grid">
       ${box('logo_img', 'Logo', pick('logo_img'))}
@@ -561,6 +561,11 @@ function brandCard(p) {
     </div>
     ${ui.sigPad ? `<div class="panel stack"><b>Signez dans le cadre, au doigt ou à la souris</b><canvas id="sigpad" class="sigpad" width="600" height="220"></canvas>
       <div class="row"><button class="btn primary sm" data-act="sigSave" ${ui.busy ? 'disabled' : ''}>Enregistrer la signature</button><button class="btn sm" data-act="sigClear">Effacer</button><button class="btn sm ghost" data-act="sigCancel">Annuler</button></div></div>` : ''}
+    ${ui.cut ? `<div class="panel stack"><b>Vérifiez le détourage ${ui.cut.k === 'stamp_img' ? 'du cachet' : 'de la signature'}</b>
+      <div class="brand-show cut-show"><img id="cut-img" alt="Aperçu"></div>
+      <label class="field">Fond retiré : moins ↔ plus<input type="range" id="cut-level" min="0" max="100" value="${ui.cut.level}"></label>
+      <small class="muted">S’il reste du gris ou des taches, poussez vers « plus ». Si le trait s’efface, revenez vers « moins ».</small>
+      <div class="row"><button class="btn primary sm" id="cut-save" data-act="cutSave">Enregistrer</button><button class="btn sm ghost" data-act="cutCancel">Annuler</button></div></div>` : ''}
     <input type="file" id="imgfile" accept="image/png,image/jpeg,image/webp" hidden>
   </section>`;
 }
@@ -720,26 +725,69 @@ function trimCanvas(cv) {
   out.getContext('2d').drawImage(cv, x0, y0, x1 - x0 + 1, y1 - y0 + 1, pad, pad, x1 - x0 + 1, y1 - y0 + 1);
   return out.toDataURL('image/png');
 }
-// Réduit l'image ; pour la signature et le cachet, le fond blanc devient transparent
-function toPng(img, maxW, maxH, clearWhite) {
+// Réduit le logo tel quel (PNG)
+function toPng(img, maxW, maxH) {
   for (let k = Math.min(1, maxW / img.width, maxH / img.height); ; k *= 0.75) {
     const cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
-    const ctx = cv.getContext('2d');
-    ctx.drawImage(img, 0, 0, cv.width, cv.height);
-    if (clearWhite) {
-      const im = ctx.getImageData(0, 0, cv.width, cv.height), a = im.data;
-      for (let i = 0; i < a.length; i += 4) {
-        const m = Math.min(a[i], a[i + 1], a[i + 2]);
-        if (m > 205) a[i + 3] = 0; else if (m > 150) a[i + 3] = Math.round(a[i + 3] * (205 - m) / 55);
-      }
-      ctx.putImageData(im, 0, 0);
-    }
-    const url = clearWhite ? trimCanvas(cv) : cv.toDataURL('image/png');
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    const url = cv.toDataURL('image/png');
     if (url.length <= 380000 || k < 0.1) return url;
   }
 }
-const IMG_SIZE = {logo_img: [480, 200, false], signature_img: [600, 240, true], stamp_img: [420, 420, true]};
+// Détourage d'une photo de signature ou de cachet : la couleur du papier est estimée zone par zone
+// (papier gris, ombres) et seule l'encre nettement plus foncée est gardée. level : 0 à 1, part de fond retirée.
+function cutOut(img, maxW, maxH, level) {
+  for (let k = Math.min(1, maxW / img.width, maxH / img.height); ; k *= 0.75) {
+    const cv = document.createElement('canvas'), w = cv.width = Math.max(1, Math.round(img.width * k)), h = cv.height = Math.max(1, Math.round(img.height * k));
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    const im = ctx.getImageData(0, 0, w, h), a = im.data, L = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) L[i] = 0.299 * a[i * 4] + 0.587 * a[i * 4 + 1] + 0.114 * a[i * 4 + 2];
+    // Papier par case : la luminosité que dépassent 10 % des pixels
+    const B = Math.max(8, Math.round(Math.max(w, h) / 16)), gw = Math.ceil(w / B), gh = Math.ceil(h / B), g = new Float32Array(gw * gh);
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      const v = [];
+      for (let y = gy * B; y < Math.min(h, gy * B + B); y++) for (let x = gx * B; x < Math.min(w, gx * B + B); x++) v.push(L[y * w + x]);
+      v.sort((p, q) => p - q); g[gy * gw + gx] = v[Math.floor(v.length * 0.9)];
+    }
+    // Une case pleine d'encre prend le papier de ses voisines, puis on lisse
+    const nb = (src, f) => {
+      const o = new Float32Array(gw * gh);
+      for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+        const v = [];
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && yy < gh && xx >= 0 && xx < gw) v.push(src[yy * gw + xx]); }
+        o[y * gw + x] = f(v);
+      }
+      return o;
+    };
+    const bg = nb(nb(g, v => Math.max(...v)), v => v.reduce((p, q) => p + q, 0) / v.length);
+    const t0 = 0.04 + 0.22 * level, t1 = t0 + 0.16;
+    for (let y = 0; y < h; y++) {
+      const fy = Math.min(gh - 1, Math.max(0, (y + 0.5) / B - 0.5)), y0 = Math.floor(fy), y1 = Math.min(gh - 1, y0 + 1), ty = fy - y0;
+      for (let x = 0; x < w; x++) {
+        const fx = Math.min(gw - 1, Math.max(0, (x + 0.5) / B - 0.5)), x0 = Math.floor(fx), x1 = Math.min(gw - 1, x0 + 1), tx = fx - x0;
+        const p = Math.max(1, (bg[y0 * gw + x0] * (1 - tx) + bg[y0 * gw + x1] * tx) * (1 - ty) + (bg[y1 * gw + x0] * (1 - tx) + bg[y1 * gw + x1] * tx) * ty);
+        const i = y * w + x, d = 1 - Math.min(1, L[i] / p), al = Math.min(1, Math.max(0, (d - t0) / (t1 - t0)));
+        // L'encre est ramenée sur papier blanc puis foncée : le bleu ou le rouge d'un cachet restent visibles
+        for (let c = 0; c < 3; c++) a[i * 4 + c] = Math.round(255 * Math.pow(Math.min(1, a[i * 4 + c] / p), 1.8));
+        a[i * 4 + 3] = Math.round(a[i * 4 + 3] * al);
+      }
+    }
+    ctx.putImageData(im, 0, 0);
+    const url = trimCanvas(cv);
+    if (url.length <= 380000 || k < 0.1) return url;
+  }
+}
+const IMG_SIZE = {logo_img: [480, 200], signature_img: [600, 240], stamp_img: [420, 420]};
+let cutImg = null;
+const cutRender = () => {
+  const im = $('#cut-img');
+  if (!ui.cut || !im) return;
+  const [w, h] = IMG_SIZE[ui.cut.k];
+  ui.cut.url = cutOut(cutImg, w, h, ui.cut.level / 100);
+  im.src = ui.cut.url || ''; $('#cut-save').disabled = !ui.cut.url;
+};
 const saveBrand = (fields, msg) => run(async () => { state.profile = await db.saveProfile(state.profile.id, fields); ui.pdf = null; toast(msg); });
 
 // Zone de signature au doigt ou à la souris
@@ -888,6 +936,12 @@ const acts = {
   sigDraw: () => { ui.sigPad = true; render(); $('#sigpad')?.scrollIntoView({block: 'center'}); },
   sigClear: () => { const cv = $('#sigpad'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); },
   sigCancel: () => { ui.sigPad = false; render(); },
+  cutCancel: () => { ui.cut = null; cutImg = null; render(); },
+  cutSave: () => {
+    const {k, url} = ui.cut || {};
+    if (!url) return;
+    ui.cut = null; cutImg = null; saveBrand({[k]: url}, k === 'stamp_img' ? 'Cachet enregistré' : 'Signature enregistrée');
+  },
   sigSave: () => {
     const url = trimCanvas($('#sigpad'));
     if (!url) { toast('Signez d’abord dans le cadre'); return; }
@@ -973,6 +1027,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.matches('tr[data-act]')) e.target.click();
 });
 document.addEventListener('input', e => {
+  if (e.target.id === 'cut-level' && ui.cut) { ui.cut.level = +e.target.value; cancelAnimationFrame(cutRender.f); cutRender.f = requestAnimationFrame(cutRender); return; }
   if (e.target.id === 'q') { ui.q = e.target.value; $('#doclist').innerHTML = docList(); return; }
   if (e.target.id === 'relmsg') { const a = $('#walink'); if (a) a.href = waLink((ui.doc.snapshot?.client || clientOf(ui.doc.client_id) || {}).phone, e.target.value); return; }
   if (e.target.closest('#editor')) {
@@ -990,11 +1045,14 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', async e => {
   if (e.target.id === 'imgfile' && e.target.files[0] && ui.imgKey) {
-    const k = ui.imgKey, [w, h, clear] = IMG_SIZE[k];
+    const k = ui.imgKey, [w, h] = IMG_SIZE[k];
     try {
-      const url = toPng(await loadImage(e.target.files[0]), w, h, clear);
-      if (!url) { toast('L’image semble vide : essayez une photo plus contrastée.'); return; }
-      saveBrand({[k]: url}, k === 'logo_img' ? 'Logo enregistré' : k === 'stamp_img' ? 'Cachet enregistré' : 'Signature enregistrée');
+      const img = await loadImage(e.target.files[0]);
+      if (k === 'logo_img') { saveBrand({logo_img: toPng(img, w, h)}, 'Logo enregistré'); return; }
+      // Signature et cachet : aperçu du détourage avant d'enregistrer
+      cutImg = img; ui.cut = {k, level: 50, url: ''}; ui.sigPad = false; render(); cutRender();
+      $('#cut-img')?.closest('.panel').scrollIntoView({block: 'center'});
+      if (!ui.cut.url) toast('L’image semble vide : essayez une photo plus contrastée.');
     } catch (err) { toast(humanError(err)); }
   }
   if (e.target.id === 's-color' && isPro()) saveBrand({brand_color: e.target.value.toUpperCase()}, 'Couleur enregistrée');
