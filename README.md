@@ -21,7 +21,7 @@ Hébergé sur Cloudflare Pages : chaque envoi sur `main` est publié automatique
 ## État du projet
 
 - **Démo** : les données restent dans le navigateur de chaque visiteur (`localStorage`).
-- **Application** : compte (e-mail, ou numéro avec code WhatsApp), profil, clients, tarifs, devis et factures, paiements reçus (acomptes, reste à payer, relance WhatsApp).
+- **Application** : compte (e-mail, ou numéro avec code WhatsApp), profil, clients, tarifs, devis et factures, paiements reçus (acomptes, reste à payer), relances du jour préparées pour WhatsApp.
 
 ## Mettre en route l'application
 

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conditions d’utilisation · Facture SN</title>
+<meta name="description" content="Les règles d’utilisation de Facture SN.">
+<meta name="theme-color" content="#0A6B53">
+<link rel="icon" href="app/icons/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="app/css/app.css">
+<style>
+.legal{max-width:760px;margin:0 auto;padding:32px max(16px,env(safe-area-inset-right,0px)) 64px max(16px,env(safe-area-inset-left,0px));line-height:1.6}
+.legal h1{margin:18px 0 4px}.legal h2{margin:28px 0 6px;font-size:19px}.legal ul{padding-left:20px}.legal li{margin:4px 0}
+.legal a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main class="legal">
+  <a class="brand" href="./" style="text-decoration:none;color:inherit"><span class="mark" aria-hidden="true">FS</span><div><b>Facture SN</b><small>Pour les freelances</small></div></a>
+  <h1>Conditions d’utilisation</h1>
+  <p class="muted">Dernière mise à jour : 3 novembre 2026</p>
+
+  <h2>Le service</h2>
+  <p>Facture SN permet de créer des devis et des factures, de suivre les paiements reçus et de préparer des relances. Le service est en bêta : il peut évoluer, et certaines fonctions peuvent changer ou être temporairement indisponibles.</p>
+
+  <h2>Votre compte</h2>
+  <ul>
+    <li>Vous êtes responsable de votre compte et des informations que vous saisissez.</li>
+    <li>Gardez votre mot de passe et les codes reçus par WhatsApp pour vous.</li>
+    <li>Vous pouvez supprimer votre compte à tout moment dans les paramètres.</li>
+  </ul>
+
+  <h2>Vos documents</h2>
+  <ul>
+    <li>Les montants, mentions et coordonnées de vos documents relèvent de votre responsabilité.</li>
+    <li>Une facture validée reçoit un numéro définitif et ne peut plus être modifiée ; vous pouvez l’annuler et en créer une nouvelle.</li>
+    <li>Facture SN n’est pas un cabinet comptable : vérifiez vos obligations fiscales (TVA, NINEA) auprès d’un professionnel.</li>
+    <li>Pensez à exporter régulièrement vos factures : la loi vous demande de les conserver 10 ans.</li>
+  </ul>
+
+  <h2>Formules</h2>
+  <p>La formule gratuite affiche la mention « Créé avec Facture SN » sur vos documents. La formule Pro, quand elle sera proposée, la retirera et ajoutera des fonctions ; son prix sera annoncé avant tout paiement.</p>
+
+  <h2>Usage interdit</h2>
+  <p>N’utilisez pas Facture SN pour des documents faux ou trompeurs, pour envoyer des messages non sollicités, ou pour gêner le fonctionnement du service. Un compte qui ne respecte pas ces règles peut être suspendu.</p>
+
+  <h2>Responsabilité</h2>
+  <p>Nous faisons notre possible pour que le service fonctionne et que vos données soient protégées, sans pouvoir garantir l’absence totale de panne. Facture SN ne peut pas être tenu responsable d’un impayé de vos clients.</p>
+
+  <h2>Contact</h2>
+  <p>Une question : écrivez-nous sur <a id="wa" href="#">WhatsApp</a>. Ces conditions suivent le droit sénégalais.</p>
+
+  <p style="margin-top:32px"><a href="confidentialite.html">Politique de confidentialité</a> · <a href="app/">Ouvrir l’application</a></p>
+</main>
+<script type="module">
+import {WHATSAPP_GATEWAY} from './app/js/config.js';
+if (WHATSAPP_GATEWAY) document.getElementById('wa').href = 'https://wa.me/' + WHATSAPP_GATEWAY;
+</script>
+</body>
+</html>

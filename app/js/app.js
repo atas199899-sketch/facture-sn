@@ -1,5 +1,5 @@
 // Facture SN : écrans et navigation de l'application connectée
-// Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures. Étape 3 : paiements reçus.
+// Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures. Étape 3 : paiements reçus. Étape 4 : relances.
 import * as db from './db.js';
 import {WHATSAPP_GATEWAY} from './config.js';
 import {esc, num, parseNum, isEur, amt, amtShort, toMinor, toMajor, toXOF, decimal, today, addDays, fmtDate, totals, sommeEnLettres} from './format.js';
@@ -8,7 +8,7 @@ const $ = s => document.querySelector(s);
 
 const state = {session: null, profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''};
 const ui = {view: 'home', authMode: 'login', err: '', info: '', busy: false, clientDraft: null, catDraft: null, confirm: null, recovery: false,
-  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null};
+  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null, delAsk: false};
 
 /* ---------- Messages d'erreur lisibles ---------- */
 function humanError(e) {
@@ -65,6 +65,45 @@ const pill = s => `<span class="pill ${ST[s][1]}">${ST[s][0]}</span>`;
 const clientOf = id => state.clients.find(c => c.id === id);
 const cName = id => clientOf(id)?.name || 'Client supprimé';
 const docLabel = d => d.number || (d.type === 'DEV' ? 'Devis brouillon' : 'Facture brouillon');
+
+/* ---------- Relances : calendrier ---------- */
+// 3 jours avant l'échéance, le jour même, 7 et 15 jours après, puis tous les 15 jours
+const REMIND_STEPS = [-3, 0, 7, 15];
+const stepDay = k => k < REMIND_STEPS.length ? REMIND_STEPS[k] : 15 * (k - 2);
+const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+const lateDays = d => daysBetween(d.due_date || d.issue_date, today());
+// Dernière étape atteinte (on ne relance jamais dans les 3 jours qui suivent la facture)
+function remindStep(d) {
+  if (restOf(d) <= 0) return null;
+  const base = d.due_date || d.issue_date, late = lateDays(d);
+  let k = -1;
+  while (stepDay(k + 1) <= late) k++;
+  if (k < 0) return null;
+  const date = addDays(base, stepDay(k));
+  return date < addDays(d.issue_date, 3) ? null : {k, date};
+}
+// Relance à faire aujourd'hui : étape atteinte, pas encore envoyée, ni reportée, ni désactivée pour ce client
+function remindDue(d) {
+  const s = remindStep(d);
+  if (!s || state.profile?.reminders_on === false || clientOf(d.client_id)?.reminders_off) return null;
+  if (d.reminded_at && d.reminded_at >= s.date) return null;
+  if (d.remind_after && d.remind_after > today()) return null;
+  return s;
+}
+// Date de la prochaine relance prévue (null si aucune)
+function nextRemind(d) {
+  if (restOf(d) <= 0 || state.profile?.reminders_on === false || clientOf(d.client_id)?.reminders_off) return null;
+  if (remindDue(d)) return today();
+  const s = remindStep(d), snoozed = d.remind_after && d.remind_after > today() ? d.remind_after : null;
+  if (s && snoozed && !(d.reminded_at && d.reminded_at >= s.date)) return snoozed;
+  const base = d.due_date || d.issue_date, min = addDays(d.issue_date, 3);
+  let k = 0;
+  while (addDays(base, stepDay(k)) <= today() || addDays(base, stepDay(k)) < min) k++;
+  const next = addDays(base, stepDay(k));
+  return snoozed && snoozed > next ? snoozed : next;
+}
+const remindWhen = d => { const n = lateDays(d); return n < 0 ? `échéance dans ${-n} j` : n === 0 ? 'échéance aujourd’hui' : `${n} j de retard`; };
+const remindRank = d => d.reminder_count ? `${d.reminder_count + 1}ᵉ relance` : '1ʳᵉ relance';
 
 /* ---------- Écrans hors connexion ---------- */
 const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Facture SN</b><small>Pour les freelances</small></div></div>`;
@@ -123,7 +162,8 @@ function vAuth() {
     <button class="btn primary" type="submit" ${ui.busy ? 'disabled' : ''}>${m === 'signup' ? 'Créer mon compte' : 'Se connecter'}</button>
     ${m === 'login' ? '<button class="linkbtn" type="button" data-act="authMode" data-mode="forgot">Mot de passe oublié ?</button>' : ''}
     ${WHATSAPP_GATEWAY ? '<div class="or"><span>ou</span></div><button class="btn" type="button" data-act="authMode" data-mode="phone">Continuer avec mon numéro (WhatsApp)</button>' : ''}
-    <a class="linkbtn" href="../demo.html">Voir la démo sans compte</a></form></div>`;
+    <a class="linkbtn" href="../demo.html">Voir la démo sans compte</a>
+    <small class="muted" style="text-align:center">En continuant, vous acceptez les <a href="../conditions.html" target="_blank" rel="noopener">conditions d’utilisation</a> et la <a href="../confidentialite.html" target="_blank" rel="noopener">politique de confidentialité</a>.</small></form></div>`;
 }
 
 function vReset() {
@@ -152,7 +192,8 @@ function vHome() {
   const curOf = Object.fromEntries(state.docs.map(d => [d.id, d.currency]));
   const cashed = state.payments.filter(x => x.paid_at.slice(0, 7) === month).reduce((a, x) => a + toXOF(curOf[x.document_id], x.amount), 0);
   const due = state.docs.reduce((a, d) => a + toXOF(d.currency, restOf(d)), 0), unpaid = state.docs.filter(d => restOf(d) > 0).length;
-  const lateDocs = state.docs.filter(d => stOf(d) === 'late'), late = lateDocs.length, drafts = state.docs.filter(d => d.status === 'draft').length;
+  const late = state.docs.filter(d => stOf(d) === 'late').length, drafts = state.docs.filter(d => d.status === 'draft').length;
+  const toRemind = state.docs.filter(remindDue);
   const step = (done, title, sub, act) => `<div class="step ${done ? 'done' : ''}"><span class="dot">${done ? '✓' : '·'}</span>
     <div class="txt"><b>${title}</b><small>${sub}</small></div>${act || ''}</div>`;
   const started = Boolean(p.phone_pay && p.job) && nc > 0 && nt > 0 && nd > 0;
@@ -172,21 +213,23 @@ function vHome() {
       ${step(nt > 0, 'Ajouter vos tarifs habituels', nt ? `${nt} prestation${nt > 1 ? 's' : ''} enregistrée${nt > 1 ? 's' : ''}.` : 'Leur prix se remplira tout seul dans vos factures.', `<button class="btn sm" data-act="catNew">+ Tarif</button>`)}
       ${step(nd > 0, 'Créer votre premier devis ou facture', nd ? 'C’est parti !' : 'Le numéro est attribué automatiquement à la validation.', `<button class="btn sm" data-act="new" data-type="DEV">+ Devis</button>`)}
     </div></section>`}
-    ${late ? `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>À relancer</h2><button class="btn ghost sm" data-act="filter" data-f="late" data-go="1">Tout voir</button></div>
-      <div class="tablewrap">${docTable(lateDocs.slice(0, 5))}</div></section>` : ''}
+    ${toRemind.length ? `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Relances du jour</h2>${toRemind.length > 5 ? `<button class="btn ghost sm" data-act="filter" data-f="remind" data-go="1">Tout voir (${toRemind.length})</button>` : ''}</div>
+      <p class="muted" style="margin:0 0 10px">Le message est déjà écrit : WhatsApp s’ouvre, vous n’avez plus qu’à l’envoyer.</p>
+      <div class="tablewrap">${remindTable(toRemind.slice(0, 5))}</div></section>` : ''}
     ${nd ? `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Derniers documents</h2><button class="btn ghost sm" data-act="go" data-view="docs">Tout voir</button></div>
       <div class="tablewrap">${docTable(state.docs.slice(0, 5))}</div></section>` : ''}
-    <p class="note">Bêta : les liens de paiement Wave / Orange Money et les relances automatiques arrivent aux prochaines étapes.</p>
+    <p class="note">Bêta : les liens de paiement Wave / Orange Money et les relances automatiques par e-mail arrivent aux prochaines étapes.</p>
   </div>`;
 }
 
 /* ---------- Liste des documents ---------- */
-const FILTERS = [['all', 'Tous'], ['FAC', 'Factures'], ['DEV', 'Devis'], ['draft', 'Brouillons'], ['unpaid', 'À encaisser'], ['late', 'Échéance passée'], ['paid', 'Payées']];
+const FILTERS = [['all', 'Tous'], ['FAC', 'Factures'], ['DEV', 'Devis'], ['draft', 'Brouillons'], ['unpaid', 'À encaisser'], ['remind', 'À relancer'], ['late', 'Échéance passée'], ['paid', 'Payées']];
 function matchFilter(d, f) {
   if (f === 'all') return true;
   if (f === 'FAC' || f === 'DEV') return d.type === f;
   if (f === 'draft') return d.status === 'draft';
   if (f === 'unpaid') return restOf(d) > 0;
+  if (f === 'remind') return Boolean(remindDue(d));
   return stOf(d) === f;
 }
 function docTable(list) {
@@ -195,6 +238,17 @@ function docTable(list) {
       <td class="mono">${esc(docLabel(d))}</td><td class="cl">${esc(cName(d.client_id))}</td>
       <td class="hide-sm">${fmtDate(d.issue_date)}</td><td class="hide-sm">${fmtDate(d.due_date)}</td>
       <td class="num">${amtShort(d.currency, d.total_ttc)}</td><td class="num hide-sm">${restOf(d) > 0 ? amtShort(d.currency, restOf(d)) : '—'}</td><td>${pill(stOf(d))}</td></tr>`).join('')}</tbody></table>`;
+}
+function remindTable(list) {
+  return `<table class="list"><thead><tr><th>Client</th><th class="num">Reste dû</th><th class="num">Relance</th></tr></thead>
+    <tbody>${list.map(d => { const c = clientOf(d.client_id) || {};
+      return `<tr data-act="open" data-id="${d.id}" tabindex="0">
+      <td class="cl"><b>${esc(cName(d.client_id))}</b><br><small class="muted"><span class="mono">${esc(d.number)}</span> · ${remindWhen(d)} · ${remindRank(d)}</small></td>
+      <td class="num">${amtShort(d.currency, restOf(d))}</td>
+      <td class="num"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap">
+        ${c.phone ? `<a class="btn sm primary" href="${esc(waLink(c.phone, reminderText(d, state.profile, c)))}" data-act="remindWa" data-id="${d.id}">WhatsApp</a>`
+          : `<button class="btn sm primary" data-act="open" data-id="${d.id}" title="Ce client n’a pas de numéro">Voir</button>`}
+        <button class="btn sm ghost" data-act="snooze" data-id="${d.id}" data-days="3" title="Reporter de 3 jours">Plus tard</button></div></td></tr>`; }).join('')}</tbody></table>`;
 }
 function docList() {
   const q = ui.q.trim().toLowerCase();
@@ -230,13 +284,20 @@ function documentText(d, co, c) {
     + (showMade() ? `\n\n—\n${dev ? 'Devis créé' : 'Facture créée'} avec Facture SN, gratuit pour les freelances : ${MADE_URL}` : '');
 }
 
+// Le ton change avec le retard : rappel aimable, jour de l'échéance, relance, relance ferme
 function reminderText(d, co, c) {
-  const rest = restOf(d), past = d.due_date && d.due_date < today();
-  const pay = isEur(d.currency) ? 'Règlement par virement bancaire.' : `Vous pouvez régler par Wave ou Orange Money au ${co.phone_pay || '[votre numéro]'}.`;
-  return `Bonjour ${c.contact || c.name || ''},\n\nPetit rappel concernant ma facture ${d.number} du ${fmtDate(d.issue_date)}, d’un montant de ${amt(d.currency, d.total_ttc)}`
-    + `${d.due_date ? (past ? `, arrivée à échéance le ${fmtDate(d.due_date)}` : `, à régler avant le ${fmtDate(d.due_date)}`) : ''}.`
-    + `${d.paid_amount > 0 ? ` Merci pour le règlement de ${amt(d.currency, d.paid_amount)} déjà reçu : il reste ${amt(d.currency, rest)} à payer.` : ''}`
-    + `\n\n${pay}\n\nSi le paiement est déjà parti, merci de ne pas tenir compte de ce message.\n\nBien cordialement,\n${co.name || ''}`;
+  const rest = restOf(d), cur = d.currency, late = lateDays(d), ref = `ma facture ${d.number} du ${fmtDate(d.issue_date)}`;
+  const due = d.due_date ? fmtDate(d.due_date) : '';
+  const pay = isEur(cur) ? 'Règlement par virement bancaire.' : `Vous pouvez régler par Wave ou Orange Money au ${co.phone_pay || '[votre numéro]'}.`;
+  const sum = d.paid_amount > 0 ? `Merci pour le règlement de ${amt(cur, d.paid_amount)} déjà reçu : il reste ${amt(cur, rest)} à payer.` : `Montant : ${amt(cur, d.total_ttc)}.`;
+  const intro = !d.due_date ? `Petit rappel concernant ${ref}, qui n’a pas encore été réglée.`
+    : late < 0 ? `Petit rappel amical : ${ref} arrive à échéance le ${due}.`
+    : late === 0 ? `Je me permets de vous rappeler que ${ref} arrive à échéance aujourd’hui.`
+    : late < 15 ? `Sauf erreur de ma part, ${ref}, arrivée à échéance le ${due}, n’a pas encore été réglée.`
+    : `Je reviens vers vous au sujet de ${ref}, arrivée à échéance le ${due} : elle reste impayée après ${late} jours de retard${d.reminder_count ? ', malgré mes précédents rappels' : ''}.`;
+  const ask = late >= 15 ? 'Merci de procéder au règlement dans les meilleurs délais. Si vous rencontrez une difficulté, dites-le-moi : nous trouverons une solution ensemble.'
+    : 'Si le paiement est déjà parti, merci de ne pas tenir compte de ce message.';
+  return `Bonjour ${c.contact || c.name || ''},\n\n${intro} ${sum}\n\n${pay}\n\n${ask}\n\nBien cordialement,\n${co.name || ''}`;
 }
 
 function paper(d, co, c) {
@@ -271,6 +332,18 @@ function paper(d, co, c) {
   </article>`;
 }
 
+// Encadré « Relances » d'une facture non soldée
+function remindInfo(d, c) {
+  const n = d.reminder_count, offAll = state.profile.reminders_on === false, off = offAll || clientOf(d.client_id)?.reminders_off, due = remindDue(d), next = nextRemind(d);
+  const snoozed = d.remind_after && d.remind_after > today();
+  const sent = n ? `${n} relance${n > 1 ? 's' : ''} envoyée${n > 1 ? 's' : ''}, la dernière le ${fmtDate(d.reminded_at)}` : 'Aucune relance envoyée';
+  const plan = offAll ? 'relances désactivées dans vos paramètres' : off ? `relances désactivées pour ${esc(c.name)}` : due ? '<b>une relance est à faire aujourd’hui</b>' : next ? `prochaine relance le ${fmtDate(next)}${snoozed ? ' (reportée)' : ''}` : '';
+  return `<div class="panel noprint remind"><div><b>Relances</b><br><small class="muted">${sent}${plan ? ' · ' + plan : ''}.</small></div>
+    <div class="row">${due ? `<button class="btn sm primary" data-act="share" data-mode="remind">Préparer la relance</button>` : ''}
+      ${off ? '' : `<button class="btn sm" data-act="snooze" data-id="${d.id}" data-days="7">Reporter d’une semaine</button>`}
+      ${snoozed ? `<button class="btn sm ghost" data-act="snooze" data-id="${d.id}" data-days="0">Annuler le report</button>` : ''}</div></div>`;
+}
+
 function vDoc() {
   const d = ui.doc;
   if (!d) return ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : `<p class="boot">Chargement du document…</p>`;
@@ -297,7 +370,7 @@ function vDoc() {
       ${dev && d.status === 'sent' && !d.converted_to ? `<button class="btn primary" data-act="convert">Le client accepte : créer la facture</button>` : ''}
       ${rest > 0 ? `<button class="btn primary" data-act="payNew">Enregistrer un paiement</button>` : ''}
       ${d.status === 'sent' ? `<button class="btn" data-act="print">Télécharger le PDF</button><button class="btn" data-act="share" data-mode="send">Envoyer par WhatsApp</button>` : ''}
-      ${rest > 0 && (d.due_date && d.due_date < today() || d.paid_amount > 0) ? `<button class="btn" data-act="share" data-mode="remind">Relancer</button>` : ''}
+      ${rest > 0 ? `<button class="btn" data-act="share" data-mode="remind">Relancer</button>` : ''}
       ${draft ? '' : `<button class="btn" data-act="dup">Dupliquer</button>`}
       ${draft ? `<button class="btn danger" data-act="askConfirm" data-c="del">Supprimer</button>` : ''}
       ${d.status === 'sent' && !(d.paid_amount > 0) ? `<button class="btn danger" data-act="askConfirm" data-c="cancel">Annuler</button>` : ''}
@@ -306,6 +379,7 @@ function vDoc() {
     ${confirm ? `<div class="panel alert noprint"><b>${confirm[0]}</b>
       <div class="row"><button class="btn ${confirm[3]}" data-act="${confirm[1]}" ${ui.busy ? 'disabled' : ''}>${confirm[2]}</button><button class="btn" data-act="cancelConfirm">Retour</button></div></div>` : ''}
     ${ui.err && !p ? `<div class="err noprint" role="alert">${esc(ui.err)}</div>` : ''}
+    ${rest > 0 ? remindInfo(d, c) : ''}
     ${draft ? `<p class="note noprint">Brouillon : vous pouvez encore le modifier. Validez-le pour lui donner son numéro, puis téléchargez le PDF ou envoyez-le par WhatsApp.</p>` : ''}
     ${p ? `<form class="panel noprint" id="payform"><h2>Enregistrer un paiement</h2>
       <p class="muted" style="margin:0">Reste à payer : <b>${amt(d.currency, rest)}</b>${d.deposit_amount > d.paid_amount ? ` · acompte attendu : ${amt(d.currency, d.deposit_amount - d.paid_amount)}` : ''}</p>
@@ -322,9 +396,9 @@ function vDoc() {
         <td class="num"><button class="btn ghost sm" data-act="payAskDel" data-id="${x.id}" aria-label="Supprimer ce paiement">Supprimer</button></td></tr>`).join('')}</tbody></table></div></section>` : ''}
     ${ui.share ? `<div class="panel noprint"><h2>${ui.share === 'remind' ? 'Message de relance' : 'Message d’envoi'}</h2>
       <textarea id="relmsg" class="relmsg" aria-label="Message">${esc(msg)}</textarea>
-      <div class="row"><a class="btn primary" id="walink" href="${esc(waLink(c.phone, msg))}" target="_blank" rel="noopener">Ouvrir WhatsApp</a>
+      <div class="row"><a class="btn primary" id="walink" href="${esc(waLink(c.phone, msg))}" ${ui.share === 'remind' ? `data-act="remindWa" data-id="${d.id}"` : 'target="_blank" rel="noopener"'}>Ouvrir WhatsApp</a>
         <button class="btn" data-act="copy">Copier le message</button><button class="btn ghost" data-act="closeShare">Fermer</button></div>
-      <small class="muted">Destinataire : ${esc(c.phone || 'aucun numéro enregistré')}.${ui.share === 'remind' ? '' : ' Pensez à joindre le PDF téléchargé dans la conversation.'}</small></div>` : ''}
+      <small class="muted">Destinataire : ${esc(c.phone || 'aucun numéro enregistré')}.${ui.share === 'remind' ? ' La relance est notée dès que vous ouvrez WhatsApp.' : ' Pensez à joindre le PDF téléchargé dans la conversation.'}</small></div>` : ''}
     ${paper(d, co, c)}
   </div>`;
 }
@@ -332,13 +406,14 @@ function vDoc() {
 /* ---------- Création et modification ---------- */
 const blankLine = () => ({description: '', qty: 1, price: 0});
 // Nouveau brouillon : vide, ou copié d'un document existant (src), avec d'éventuels réglages imposés (extra)
+const defaultDays = type => type === 'DEV' ? state.profile.quote_days ?? 30 : state.profile.due_days ?? 15;
 function startDraft(type, src, extra = {}) {
   const T = today(), p = state.profile;
   ui.draft = src
-    ? {id: null, type: src.type, client_id: src.client_id, currency: src.currency, issue_date: T, due_date: addDays(T, src.type === 'DEV' ? 30 : 15),
+    ? {id: null, type: src.type, client_id: src.client_id, currency: src.currency, issue_date: T, due_date: addDays(T, defaultDays(src.type)),
        discount_pct: +src.discount_pct, deposit_pct: src.deposit_pct, tva: src.tva && p.tva_on, notes: src.notes,
        lines: src.lines.map(l => ({description: l.description, qty: +l.qty, price: toMajor(src.currency, l.unit_price)}))}
-    : {id: null, type, client_id: state.clients.length === 1 ? state.clients[0].id : '', currency: 'XOF', issue_date: T, due_date: addDays(T, type === 'DEV' ? 30 : 15),
+    : {id: null, type, client_id: state.clients.length === 1 ? state.clients[0].id : '', currency: 'XOF', issue_date: T, due_date: addDays(T, defaultDays(type)),
        discount_pct: 0, deposit_pct: type === 'DEV' ? 50 : 0, tva: p.tva_on, notes: '', lines: [blankLine()]};
   Object.assign(ui.draft, extra);
   go('edit');
@@ -425,6 +500,7 @@ function vClient() {
   <form id="clientform" class="card stack">
     <div class="fgrid">${f('name', 'Nom ou entreprise', 'text', 'Ex. : Boutique Keur Yaye')}${f('contact', 'Personne de contact')}${f('phone', 'Téléphone (WhatsApp)', 'tel', '+221 77 000 00 00')}
       ${f('email', 'E-mail', 'email')}${f('address', 'Adresse', 'text', 'Quartier, ville')}${f('ninea', 'NINEA (facultatif)')}</div>
+    <label class="check"><input type="checkbox" id="k-reminders_off" ${c.reminders_off ? 'checked' : ''}> Ne pas me proposer de relances pour ce client</label>
     ${msgs()}
     ${ui.confirm === 'cdel' ? `<div class="panel alert"><b>Supprimer ce client ? Cette action est définitive.</b><div class="row"><button type="button" class="btn danger solid" data-act="clientDel">Oui, supprimer</button><button type="button" class="btn" data-act="cancelConfirm">Annuler</button></div></div>` : ''}
     <div class="row"><button type="submit" class="btn primary" ${ui.busy ? 'disabled' : ''}>Enregistrer</button>${c.id ? `<button type="button" class="btn danger" data-act="clientAskDel">Supprimer</button>` : ''}</div>
@@ -452,9 +528,11 @@ function vCatalog() {
 function vProfile() {
   const p = state.profile;
   const f = (k, l, ph = '', type = 'text') => `<label class="field">${l}<input type="${type}" id="s-${k}" value="${esc(p[k])}" placeholder="${ph}"></label>`;
-  return `<div class="head"><div><h1>Mon profil</h1><p>Ces informations apparaissent sur vos devis et factures.</p></div></div>
+  const plan = p.plan === 'pro' ? 'Pro' : 'Gratuit';
+  return `<div class="head"><div><h1>Paramètres</h1><p>Votre profil, vos préférences et votre compte.</p></div></div>
   <div class="stack">
-    <form id="profileform" class="card stack">
+    <form id="profileform" class="card stack"><h2 style="margin:0">Mon profil</h2>
+      <p class="muted" style="margin:0">Ces informations apparaissent sur vos devis et factures.</p>
       <div class="fgrid">${f('name', 'Votre nom ou nom de marque', 'Ex. : Khady Sy')}${f('job', 'Votre métier', 'Ex. : Développeur web')}
         ${f('phone_pay', 'Téléphone Wave / Orange Money', '+221 77 000 00 00', 'tel')}${f('email', 'E-mail affiché sur les factures', '', 'email')}
         ${f('address', 'Ville ou quartier', 'Ex. : Liberté 6, Dakar')}${f('ninea', 'NINEA (facultatif)')}
@@ -464,15 +542,43 @@ function vProfile() {
       ${msgs()}
       <div class="row"><button type="submit" class="btn primary" ${ui.busy ? 'disabled' : ''}>Enregistrer</button></div>
     </form>
+    <form id="prefsform" class="card stack"><h2 style="margin:0">Préférences</h2>
+      <div class="fgrid">
+        <label class="field">Délai de paiement des factures (jours)<input type="number" id="s-due_days" min="0" max="365" value="${p.due_days ?? 15}"></label>
+        <label class="field">Validité des devis (jours)<input type="number" id="s-quote_days" min="0" max="365" value="${p.quote_days ?? 30}"></label></div>
+      <label class="check"><input type="checkbox" id="s-reminders_on" ${p.reminders_on === false ? '' : 'checked'}> Me proposer les relances du jour sur l’accueil</label>
+      <div class="row"><button type="submit" class="btn primary" ${ui.busy ? 'disabled' : ''}>Enregistrer</button></div>
+    </form>
+    <section class="card stack" style="gap:12px"><h2 style="margin:0">Mes données</h2>
+      <p class="muted" style="margin:0">Gardez une copie de vos factures : pour votre comptable, ou avant de supprimer votre compte.</p>
+      <div class="row"><button class="btn" data-act="exportCsv">Exporter mes factures (Excel)</button><button class="btn" data-act="exportJson" ${ui.busy ? 'disabled' : ''}>Télécharger toutes mes données</button></div>
+    </section>
     <section class="card stack" style="gap:12px"><h2 style="margin:0">Compte</h2>
-      <p class="muted" style="margin:0">Connecté avec ${esc(userLabel(state.session.user))}.</p>
+      <p class="muted" style="margin:0">Connecté avec ${esc(userLabel(state.session.user))} · formule ${plan}.</p>
       <div class="row"><button class="btn" data-act="logout">Se déconnecter</button></div>
+      <p class="muted" style="margin:0"><a href="../confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a> · <a href="../conditions.html" target="_blank" rel="noopener">Conditions d’utilisation</a></p>
+    </section>
+    <section class="card stack danger-zone" style="gap:12px"><h2 style="margin:0">Supprimer mon compte</h2>
+      <p class="muted" style="margin:0">Votre compte, vos clients, vos tarifs, vos devis, vos factures et vos paiements seront effacés définitivement. Pensez à exporter vos factures avant : la loi vous demande de les conserver 10 ans.</p>
+      ${ui.delAsk ? `<form id="delform" class="stack" style="gap:10px">
+        <label class="field">Pour confirmer, tapez SUPPRIMER<input type="text" id="s-del" autocomplete="off" autocapitalize="characters"></label>
+        ${ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : ''}
+        <div class="row"><button type="submit" class="btn danger solid" ${ui.busy ? 'disabled' : ''}>Supprimer définitivement</button><button type="button" class="btn" data-act="delCancel">Annuler</button></div></form>`
+        : `<div class="row"><button class="btn danger" data-act="delAsk">Supprimer mon compte…</button></div>`}
     </section>
   </div>`;
 }
 
 const views = {home: vHome, docs: vDocs, doc: vDoc, edit: vEdit, clients: vClients, client: vClient, catalog: vCatalog, profile: vProfile};
-const NAV = [['home', 'Accueil'], ['docs', 'Factures et devis'], ['clients', 'Clients'], ['catalog', 'Mes tarifs'], ['profile', 'Mon profil']];
+const NAV = [['home', 'Accueil', 'Accueil'], ['docs', 'Factures et devis', 'Factures'], ['clients', 'Clients', 'Clients'], ['catalog', 'Mes tarifs', 'Tarifs'], ['profile', 'Paramètres', 'Réglages']];
+const ico = d => `<svg class="ni" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICONS = {
+  home: ico('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>'),
+  docs: ico('<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>'),
+  clients: ico('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.7 3 2.5 3.5 5.2"/>'),
+  catalog: ico('<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>'),
+  profile: ico('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>')
+};
 const navOf = {home: 'home', docs: 'docs', doc: 'docs', edit: 'docs', clients: 'clients', client: 'clients', catalog: 'catalog', profile: 'profile'};
 
 function render(scroll) {
@@ -488,13 +594,13 @@ function render(scroll) {
   }
   if (ui.view === 'onboarding') { root.innerHTML = vOnboarding(); return; }
   root.innerHTML = `<div class="app"><aside class="side">${brand}
-      <nav aria-label="Navigation">${NAV.map(([v, l]) => `<button data-act="go" data-view="${v}" ${navOf[ui.view] === v ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>
+      <nav aria-label="Navigation">${NAV.map(([v, l, s]) => `<button data-act="go" data-view="${v}" ${navOf[ui.view] === v ? 'aria-current="page"' : ''}>${ICONS[v]}<span class="nl">${l}</span><span class="ns">${s}</span></button>`).join('')}</nav>
       <div class="side-cta"><span class="who">${esc(userLabel(state.session.user))}</span></div></aside>
     <main id="main">${views[ui.view]()}</main></div>`;
   if (scroll) window.scrollTo(0, 0);
 }
 
-function go(view, extra = {}) { Object.assign(ui, {view, err: '', info: '', confirm: null, catDraft: null, share: false, pay: null}, extra); render(true); }
+function go(view, extra = {}) { Object.assign(ui, {view, err: '', info: '', confirm: null, catDraft: null, share: false, pay: null, delAsk: false}, extra); render(true); }
 
 // Exécute une action réseau en affichant l'état « en cours » et les erreurs
 async function run(fn) {
@@ -515,8 +621,30 @@ async function openDoc(id) {
 }
 function refreshSummary(d) {
   const row = {id: d.id, type: d.type, number: d.number, status: d.status, currency: d.currency, client_id: d.client_id, issue_date: d.issue_date,
-    due_date: d.due_date, total_ttc: d.total_ttc, deposit_amount: d.deposit_amount, paid_amount: d.paid_amount, converted_to: d.converted_to, created_at: d.created_at};
+    due_date: d.due_date, total_ttc: d.total_ttc, deposit_amount: d.deposit_amount, paid_amount: d.paid_amount, converted_to: d.converted_to, created_at: d.created_at,
+    reminder_count: d.reminder_count, reminded_at: d.reminded_at, remind_after: d.remind_after};
   state.docs = state.docs.some(x => x.id === d.id) ? state.docs.map(x => x.id === d.id ? row : x) : [row, ...state.docs];
+}
+
+// Fait télécharger un fichier créé dans le navigateur
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type}));
+  a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// Met à jour un document dans la liste et, s'il est ouvert, à l'écran
+function patchDoc(id, patch) {
+  state.docs = state.docs.map(x => x.id === id ? {...x, ...patch} : x);
+  if (ui.doc?.id === id) Object.assign(ui.doc, patch);
+}
+async function markReminded(id) {
+  try {
+    const n = await db.markReminded(id);
+    patchDoc(id, {reminder_count: n, reminded_at: today(), remind_after: null});
+    ui.share = false; render(); toast('Relance notée');
+  } catch (e) { toast(humanError(e)); }
 }
 
 /* ---------- Actions ---------- */
@@ -578,6 +706,28 @@ const acts = {
     ui.doc = await db.getDocument(ui.doc.id); refreshSummary(ui.doc); ui.confirm = null; toast('Paiement supprimé');
   }),
   closeShare: () => { ui.share = false; render(); },
+  delAsk: () => { ui.delAsk = true; ui.err = ''; render(); $('#s-del')?.focus(); },
+  delCancel: () => { ui.delAsk = false; ui.err = ''; render(); },
+  exportCsv: () => {
+    const head = ['Type', 'Numéro', 'Client', 'Date', 'Échéance', 'Devise', 'Total TTC', 'Payé', 'Reste à payer', 'Statut'];
+    const money = (cur, v) => String(toMajor(cur, v || 0)).replace('.', ',');
+    const rows = state.docs.filter(d => d.number).map(d => [d.type === 'DEV' ? 'Devis' : 'Facture', d.number, cName(d.client_id), d.issue_date, d.due_date || '',
+      d.currency === 'XOF' ? 'FCFA' : 'EUR', money(d.currency, d.total_ttc), money(d.currency, d.paid_amount), money(d.currency, restOf(d)), ST[stOf(d)][0]]);
+    const cell = v => /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    download(`facture-sn-${today()}.csv`, '\ufeff' + [head, ...rows].map(r => r.map(v => cell(String(v))).join(';')).join('\r\n'), 'text/csv');
+  },
+  exportJson: () => run(async () => {
+    download(`facture-sn-donnees-${today()}.json`, JSON.stringify(await db.exportAll(), null, 2), 'application/json');
+    toast('Données téléchargées');
+  }),
+  // Ouvre WhatsApp avec le message, puis note la relance
+  remindWa: el => { window.open(el.href, '_blank', 'noopener'); markReminded(el.dataset.id); },
+  snooze: el => run(async () => {
+    const days = +el.dataset.days, until = days ? addDays(today(), days) : null;
+    await db.snoozeReminder(el.dataset.id, until);
+    patchDoc(el.dataset.id, {remind_after: until});
+    toast(until ? `Relance reportée au ${fmtDate(until)}` : 'Report annulé');
+  }),
   copy: () => {
     const ta = $('#relmsg');
     navigator.clipboard.writeText(ta.value).then(() => toast('Message copié')).catch(() => { ta.select(); toast('Texte sélectionné : copiez-le avec Ctrl+C'); });
@@ -586,7 +736,7 @@ const acts = {
   clientNew: el => {
     if (el.dataset.back === 'edit') readDraft();
     ui.back = el.dataset.back || null;
-    ui.clientDraft = {id: null, name: '', contact: '', phone: '', email: '', address: '', ninea: ''}; go('client');
+    ui.clientDraft = {id: null, name: '', contact: '', phone: '', email: '', address: '', ninea: '', reminders_off: false}; go('client');
   },
   clientEdit: el => { ui.back = null; ui.clientDraft = {...state.clients.find(c => c.id === el.dataset.id)}; go('client'); },
   clientCancel: () => ui.back === 'edit' ? go('edit') : go('clients'),
@@ -679,6 +829,15 @@ document.addEventListener('submit', e => {
     if (!fields.name) { ui.err = 'Indiquez votre nom.'; return render(); }
     run(async () => { state.profile = await db.saveProfile(state.profile.id, fields); toast('Profil enregistré'); });
   }
+  if (id === 'prefsform') {
+    const days = k => Math.min(365, Math.max(0, Math.round(parseNum(val(k)) || 0)));
+    const fields = {due_days: days('s-due_days'), quote_days: days('s-quote_days'), reminders_on: $('#s-reminders_on').checked};
+    run(async () => { state.profile = await db.saveProfile(state.profile.id, fields); toast('Préférences enregistrées'); });
+  }
+  if (id === 'delform') {
+    if (val('s-del').toUpperCase() !== 'SUPPRIMER') { ui.err = 'Tapez SUPPRIMER pour confirmer.'; return render(); }
+    run(async () => { await db.deleteAccount(); ui.delAsk = false; await logout('Votre compte et toutes vos données ont été supprimés.'); });
+  }
   if (id === 'editor') {
     readDraft();
     const d = ui.draft;
@@ -714,6 +873,7 @@ document.addEventListener('submit', e => {
   if (id === 'clientform') {
     const c = ui.clientDraft;
     ['name', 'contact', 'phone', 'email', 'address', 'ninea'].forEach(k => c[k] = val('k-' + k));
+    c.reminders_off = $('#k-reminders_off').checked;
     if (!c.name) { ui.err = 'Le nom du client est obligatoire.'; return render(); }
     run(async () => {
       const row = await db.saveClient(c);
@@ -742,7 +902,7 @@ const markActive = () => { try { localStorage.setItem(IDLE_KEY, String(Date.now(
 function resetSession() {
   state.session = null;
   Object.assign(state, {profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''});
-  Object.assign(ui, {view: 'home', doc: null, draft: null, pay: null, confirm: null, busy: false, err: ''});
+  Object.assign(ui, {view: 'home', doc: null, draft: null, pay: null, confirm: null, busy: false, err: '', delAsk: false});
   render();
 }
 async function logout(info = '') {

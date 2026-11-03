@@ -601,3 +601,67 @@ revoke execute on function public.is_admin(), public.admin_check(), public.admin
   public.admin_set_plan(uuid, text), public.admin_gateway() from public, anon;
 grant execute on function public.is_admin(), public.admin_overview(), public.admin_users(),
   public.admin_set_plan(uuid, text), public.admin_gateway() to authenticated;
+
+-- ===========================================================================
+-- Étape 4 : relances préparées (le freelance les envoie depuis son WhatsApp)
+-- Le calendrier (3 jours avant l'échéance, le jour même, +7, +15, puis tous les
+-- 15 jours) est calculé par l'application à partir de ces colonnes.
+-- ===========================================================================
+alter table public.documents add column if not exists reminder_count smallint not null default 0;
+alter table public.documents add column if not exists reminded_at    date;   -- dernière relance envoyée
+alter table public.documents add column if not exists remind_after   date;   -- relance reportée jusqu'à cette date
+alter table public.clients   add column if not exists reminders_off  boolean not null default false;
+
+-- Note qu'une relance vient d'être envoyée (colonnes non modifiables directement)
+create or replace function public.mark_reminded(p_id uuid)
+returns smallint language plpgsql security definer set search_path = '' as $$
+declare
+  v_count smallint;
+begin
+  update public.documents set reminder_count = reminder_count + 1, reminded_at = current_date, remind_after = null
+  where id = p_id and user_id = auth.uid() and type = 'FAC' and status = 'sent' and paid_amount < total_ttc
+  returning reminder_count into v_count;
+  if not found then raise exception 'Seule une facture validée et non soldée peut être relancée.'; end if;
+  return v_count;
+end $$;
+
+-- Reporte la prochaine relance (null : annule le report)
+create or replace function public.snooze_reminder(p_id uuid, p_until date)
+returns date language plpgsql security definer set search_path = '' as $$
+begin
+  if p_until is not null and (p_until <= current_date or p_until > current_date + 90) then
+    raise exception 'Choisissez une date de report dans les 90 prochains jours.';
+  end if;
+  update public.documents set remind_after = p_until
+  where id = p_id and user_id = auth.uid() and type = 'FAC' and status = 'sent' and paid_amount < total_ttc;
+  if not found then raise exception 'Seule une facture validée et non soldée peut être relancée.'; end if;
+  return p_until;
+end $$;
+
+revoke execute on function public.mark_reminded(uuid), public.snooze_reminder(uuid, date) from public, anon;
+grant execute on function public.mark_reminded(uuid), public.snooze_reminder(uuid, date) to authenticated;
+
+-- ===========================================================================
+-- Paramètres et suppression du compte
+-- ===========================================================================
+alter table public.profiles add column if not exists due_days     smallint not null default 15 check (due_days between 0 and 365);
+alter table public.profiles add column if not exists quote_days   smallint not null default 30 check (quote_days between 0 and 365);
+alter table public.profiles add column if not exists reminders_on boolean  not null default true;
+grant update (due_days, quote_days, reminders_on) on public.profiles to authenticated;
+
+-- Supprime définitivement le compte connecté et toutes ses données
+create or replace function public.delete_my_account()
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_user uuid := auth.uid();
+begin
+  if v_user is null then raise exception 'Connectez-vous pour supprimer votre compte.'; end if;
+  delete from public.payments where user_id = v_user;
+  update public.documents set converted_to = null where user_id = v_user and converted_to is not null;
+  delete from public.documents where user_id = v_user;
+  delete from public.clients where user_id = v_user;
+  delete from auth.users where id = v_user;   -- profil, tarifs et compteurs suivent (on delete cascade)
+end $$;
+
+revoke execute on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;

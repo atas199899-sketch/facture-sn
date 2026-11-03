@@ -94,7 +94,8 @@ number_counters  user_id, type, year, last_value                          [étap
 payments         id, document_id, amount, method, paid_at,
                  provider, provider_ref                                   [étape 3]
 payment_links    id, document_id, amount, provider, provider_token, url   [étape 3]
-reminders        id, document_id, scheduled_for, sent_at, channel         [étape 4]
+documents        + reminder_count, reminded_at, remind_after              [étape 4]
+clients          + reminders_off                                          [étape 4]
 expenses         id, user_id, date, label, supplier, category, amount_xof,
                  method, tva_recoverable, receipt_url                     [v1.1]
 ```
@@ -141,7 +142,7 @@ Le webhook doit être **idempotent** : si l'agrégateur l'appelle deux fois, le 
 | 1. Socle | Connexion, profil, clients, tarifs, installation sur téléphone | ✅ fait |
 | 2. Documents | Devis, factures, acomptes, remises, euros, numérotation, aperçu, PDF par impression, envoi WhatsApp | ✅ fait |
 | 3. Encaissement | Saisie des paiements ✅ fait ; liens de paiement et webhook à faire | en cours |
-| 4. Relances et PDF | Liste des retards, message WhatsApp prêt, PDF | à faire |
+| 4. Relances et PDF | Relances préparées (calendrier, message WhatsApp prêt, report, désactivation par client) ✅ fait ; relances automatiques par e-mail à faire | en cours |
 | 5. Bêta fermée | 20 à 30 freelances de la liste d'attente, corrections | à faire |
 | 6. Lancement | Offre Pro, nom de domaine, connexion par téléphone (SMS ou WhatsApp), v1.1 | à faire |
 
