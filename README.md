@@ -1,5 +1,7 @@
 # Faybi SN
 
+
+> Anciennement « Facture SN ». Le site reste pour l’instant à l’adresse facture-sn.pages.dev.
 Outil de facturation pour les freelances au Sénégal : devis et factures en FCFA ou en euros, acomptes, paiements Wave et Orange Money, relances WhatsApp.
 
 - `index.html` : la page de présentation (landing page) avec la liste d'attente.
