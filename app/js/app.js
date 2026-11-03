@@ -745,13 +745,13 @@ function cutOut(img, maxW, maxH, level) {
     const im = ctx.getImageData(0, 0, w, h), a = im.data, L = new Float32Array(w * h);
     for (let i = 0; i < w * h; i++) L[i] = 0.299 * a[i * 4] + 0.587 * a[i * 4 + 1] + 0.114 * a[i * 4 + 2];
     // Papier par case : la luminosité que dépassent 10 % des pixels
-    const B = Math.max(8, Math.round(Math.max(w, h) / 16)), gw = Math.ceil(w / B), gh = Math.ceil(h / B), g = new Float32Array(gw * gh);
+    const B = Math.max(8, Math.round(Math.max(w, h) / 28)), gw = Math.ceil(w / B), gh = Math.ceil(h / B), g = new Float32Array(gw * gh);
     for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
       const v = [];
       for (let y = gy * B; y < Math.min(h, gy * B + B); y++) for (let x = gx * B; x < Math.min(w, gx * B + B); x++) v.push(L[y * w + x]);
       v.sort((p, q) => p - q); g[gy * gw + gx] = v[Math.floor(v.length * 0.9)];
     }
-    // Une case pleine d'encre prend le papier de ses voisines, puis on lisse
+    // Une case pleine d'encre prend le papier de ses voisines (médiane : garde le bord net des ombres)
     const nb = (src, f) => {
       const o = new Float32Array(gw * gh);
       for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
@@ -761,14 +761,14 @@ function cutOut(img, maxW, maxH, level) {
       }
       return o;
     };
-    const bg = nb(nb(g, v => Math.max(...v)), v => v.reduce((p, q) => p + q, 0) / v.length);
-    const t0 = 0.04 + 0.22 * level, t1 = t0 + 0.16;
+    const bg = nb(g, v => { v.sort((p, q) => p - q); return v[v.length >> 1]; });
+    const t0 = 0.06 + 0.22 * level, t1 = t0 + 0.16;
     for (let y = 0; y < h; y++) {
       const fy = Math.min(gh - 1, Math.max(0, (y + 0.5) / B - 0.5)), y0 = Math.floor(fy), y1 = Math.min(gh - 1, y0 + 1), ty = fy - y0;
       for (let x = 0; x < w; x++) {
         const fx = Math.min(gw - 1, Math.max(0, (x + 0.5) / B - 0.5)), x0 = Math.floor(fx), x1 = Math.min(gw - 1, x0 + 1), tx = fx - x0;
         const p = Math.max(1, (bg[y0 * gw + x0] * (1 - tx) + bg[y0 * gw + x1] * tx) * (1 - ty) + (bg[y1 * gw + x0] * (1 - tx) + bg[y1 * gw + x1] * tx) * ty);
-        const i = y * w + x, d = 1 - Math.min(1, L[i] / p), al = Math.min(1, Math.max(0, (d - t0) / (t1 - t0)));
+        const i = y * w + x, d = 1 - Math.min(1, L[i] / p), al0 = Math.min(1, Math.max(0, (d - t0) / (t1 - t0))), al = al0 < 0.15 ? 0 : al0;
         // L'encre est ramenée sur papier blanc puis foncée : le bleu ou le rouge d'un cachet restent visibles
         for (let c = 0; c < 3; c++) a[i * 4 + c] = Math.round(255 * Math.pow(Math.min(1, a[i * 4 + c] / p), 1.8));
         a[i * 4 + 3] = Math.round(a[i * 4 + 3] * al);
