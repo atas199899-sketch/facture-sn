@@ -90,7 +90,7 @@ Envoyez le numéro de la puce dédiée à Claude, qui le renseigne dans `app/js/
 
 ## 5. Tester
 
-1. Depuis **votre téléphone personnel**, ouvrez https://facture-sn.pages.dev/app/ et choisissez « Continuer avec mon numéro ».
+1. Depuis **votre téléphone personnel**, ouvrez https://faybi-sn.pages.dev/app/ et choisissez « Continuer avec mon numéro ».
 2. Tapez votre numéro, puis appuyez sur « Demander mon code sur WhatsApp » et envoyez le message.
 3. Vous devez recevoir le code en quelques secondes. Tapez-le : vous êtes connecté.
 

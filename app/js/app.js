@@ -273,7 +273,7 @@ function waLink(phone, text) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
 // Mention « Créé avec Faybi SN » sur les documents des comptes gratuits (retirée en Pro)
-const MADE_URL = 'https://facture-sn.pages.dev/?ref=facture';
+const MADE_URL = 'https://faybi-sn.pages.dev/?ref=facture';
 const showMade = () => state.profile?.plan !== 'pro';
 function documentText(d, co, c) {
   const dev = d.type === 'DEV';
@@ -328,7 +328,7 @@ function paper(d, co, c) {
       <div class="p-sec"><div class="lbl">Paiement</div><ul>${isEur(cur) ? '<li>Virement bancaire (coordonnées sur demande)</li>' : `<li>Wave et Orange Money : ${esc(co.phone_pay || '—')}</li><li>Virement ou espèces</li>`}</ul></div>
       ${d.notes || co.mentions ? `<div class="p-sec"><div class="lbl">Conditions</div><div class="muted">${esc(d.notes)}${d.notes && co.mentions ? '<br>' : ''}${esc(co.mentions)}</div></div>` : ''}
     </div>
-    ${showMade() ? `<p class="p-made">${dev ? 'Devis créé' : 'Facture créée'} avec <a href="${MADE_URL}" target="_blank" rel="noopener">Faybi SN</a> · facturation gratuite pour les freelances · facture-sn.pages.dev</p>` : ''}
+    ${showMade() ? `<p class="p-made">${dev ? 'Devis créé' : 'Facture créée'} avec <a href="${MADE_URL}" target="_blank" rel="noopener">Faybi SN</a> · facturation gratuite pour les freelances · faybi-sn.pages.dev</p>` : ''}
   </article>`;
 }
 
@@ -714,10 +714,10 @@ const acts = {
     const rows = state.docs.filter(d => d.number).map(d => [d.type === 'DEV' ? 'Devis' : 'Facture', d.number, cName(d.client_id), d.issue_date, d.due_date || '',
       d.currency === 'XOF' ? 'FCFA' : 'EUR', money(d.currency, d.total_ttc), money(d.currency, d.paid_amount), money(d.currency, restOf(d)), ST[stOf(d)][0]]);
     const cell = v => /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-    download(`facture-sn-${today()}.csv`, '\ufeff' + [head, ...rows].map(r => r.map(v => cell(String(v))).join(';')).join('\r\n'), 'text/csv');
+    download(`faybi-sn-${today()}.csv`, '\ufeff' + [head, ...rows].map(r => r.map(v => cell(String(v))).join(';')).join('\r\n'), 'text/csv');
   },
   exportJson: () => run(async () => {
-    download(`facture-sn-donnees-${today()}.json`, JSON.stringify(await db.exportAll(), null, 2), 'application/json');
+    download(`faybi-sn-donnees-${today()}.json`, JSON.stringify(await db.exportAll(), null, 2), 'application/json');
     toast('Données téléchargées');
   }),
   // Ouvre WhatsApp avec le message, puis note la relance

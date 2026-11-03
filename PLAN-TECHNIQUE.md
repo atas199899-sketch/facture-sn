@@ -31,7 +31,7 @@ Tout le reste (dépenses, objectif de revenus, TVA, export) est déjà maquetté
  │ sans étape de compilation     │      │ - Auth (e-mail, Google)      │
  │                              │      │ - Storage (PDF, reçus)       │
  │ Hébergée sur Cloudflare Pages │      │ - Edge Functions (serveur)   │
- │ (facture-sn.pages.dev)        │      │ - Cron (tâches planifiées)   │
+ │ (faybi-sn.pages.dev)          │      │ - Cron (tâches planifiées)   │
  └──────────────────────────────┘      └──────────────┬───────────────┘
                                                       │
                           ┌───────────────────────────┼─────────────────┐
@@ -43,7 +43,7 @@ Tout le reste (dépenses, objectif de revenus, TVA, export) est déjà maquetté
 - **L'application** est une PWA : un site qui s'installe sur l'écran d'accueil du téléphone et s'ouvre en plein écran comme une application. Un seul code pour Android, iPhone et ordinateur.
 - **Pas d'outil de compilation** : des fichiers HTML, CSS et JavaScript (modules ES) servis tels quels. La bibliothèque Supabase est chargée depuis un CDN.
 - **Supabase** fournit la base de données, la connexion, le stockage de fichiers et les fonctions serveur. Région : Europe (Paris ou Francfort). Tout se configure depuis son site web, y compris l'éditeur SQL et l'éditeur de fonctions.
-- **Hébergement** : **Cloudflare Pages**, branché sur le dépôt GitHub : chaque envoi sur `main` est mis en ligne automatiquement sur https://facture-sn.pages.dev. L'usage commercial y est autorisé et l'offre gratuite suffit. Un nom de domaine (ex. `facturesn.com`) pourra y être relié plus tard. GitHub Pages reste actif comme copie, mais n'est pas l'adresse à partager.
+- **Hébergement** : **Cloudflare Pages**, branché sur le dépôt GitHub : chaque envoi sur `main` est mis en ligne automatiquement sur https://faybi-sn.pages.dev. L'usage commercial y est autorisé et l'offre gratuite suffit. Un nom de domaine (ex. `facturesn.com`) pourra y être relié plus tard. GitHub Pages reste actif comme copie, mais n'est pas l'adresse à partager.
 
 ## 3. Choix techniques
 

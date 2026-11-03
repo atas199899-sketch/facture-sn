@@ -1,7 +1,7 @@
 # Faybi SN
 
 
-> Anciennement « Facture SN ». Le site reste pour l’instant à l’adresse facture-sn.pages.dev.
+> Anciennement « Facture SN » (facture-sn.pages.dev, qui renvoie maintenant vers faybi-sn.pages.dev).
 Outil de facturation pour les freelances au Sénégal : devis et factures en FCFA ou en euros, acomptes, paiements Wave et Orange Money, relances WhatsApp.
 
 - `index.html` : la page de présentation (landing page) avec la liste d'attente.
@@ -13,10 +13,10 @@ Outil de facturation pour les freelances au Sénégal : devis et factures en FCF
 
 ## En ligne
 
-- Présentation : https://facture-sn.pages.dev/
-- Démo : https://facture-sn.pages.dev/demo
-- Application : https://facture-sn.pages.dev/app/
-- Administration : https://facture-sn.pages.dev/admin/ (comptes déclarés dans `public.admins`)
+- Présentation : https://faybi-sn.pages.dev/
+- Démo : https://faybi-sn.pages.dev/demo
+- Application : https://faybi-sn.pages.dev/app/
+- Administration : https://faybi-sn.pages.dev/admin/ (comptes déclarés dans `public.admins`)
 
 Hébergé sur Cloudflare Pages : chaque envoi sur `main` est publié automatiquement.
 

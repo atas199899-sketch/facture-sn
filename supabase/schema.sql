@@ -502,7 +502,7 @@ begin
   where phone = v_phone and created_at > now() - interval '10 minutes'
   returning otp into v_otp;
   if v_otp is null then
-    return 'Bonjour ! Pour recevoir un code, saisissez d’abord votre numéro dans l’application Faybi SN : https://facture-sn.pages.dev/app/';
+    return 'Bonjour ! Pour recevoir un code, saisissez d’abord votre numéro dans l’application Faybi SN : https://faybi-sn.pages.dev/app/';
   end if;
   return 'Votre code Faybi SN : ' || v_otp || E'\nIl est valable 10 minutes. Ne le communiquez à personne.';
 end $$;
