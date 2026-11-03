@@ -39,6 +39,7 @@ async function loadAll() {
   try {
     const [profile, clients, catalog, docs, payments] = await Promise.all([db.getProfile(state.session.user), db.listClients(), db.listCatalog(), db.listDocuments(), db.listPayments()]);
     Object.assign(state, {profile, clients, catalog, docs, payments, loaded: true, loadErr: ''});
+    db.touchSeen();
     if (!profile.name) ui.view = 'onboarding';
   } catch (e) {
     state.loadErr = humanError(e);
@@ -1204,7 +1205,7 @@ async function checkSession() {
 }
 let markT = 0;
 ['click', 'keydown'].forEach(t => document.addEventListener(t, () => { if (state.session && Date.now() - markT > 60e3) { markT = Date.now(); markActive(); } }, {passive: true}));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkSession(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { checkSession(); if (state.loaded) db.touchSeen(); } });
 
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

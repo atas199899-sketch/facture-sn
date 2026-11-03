@@ -16,7 +16,7 @@ Outil de facturation pour les freelances au Sénégal : devis et factures en FCF
 - Présentation : https://faybi-sn.pages.dev/
 - Démo : https://faybi-sn.pages.dev/demo
 - Application : https://faybi-sn.pages.dev/app/
-- Administration : https://faybi-sn.pages.dev/admin/ (comptes déclarés dans `public.admins`)
+- Administration : https://faybi-sn.pages.dev/admin/ (connexion par code : `select public.admin_set_code('VOTRE-CODE');` dans le SQL Editor)
 
 Hébergé sur Cloudflare Pages : chaque envoi sur `main` est publié automatiquement.
 

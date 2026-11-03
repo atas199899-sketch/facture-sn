@@ -101,6 +101,8 @@ export async function exportAll() {
 /* ---------- Formule Pro ---------- */
 // Renvoie la date de fin du Pro (null : sans limite)
 export const redeemProCode = async code => ok(await sb.rpc('redeem_pro_code', {p_code: code}));
+// Dernière ouverture de l'application, vue dans l'espace admin (au plus une écriture toutes les 5 minutes)
+export const touchSeen = () => sb.rpc('touch_seen').then(() => {}, () => {});
 
 /* ---------- Relances ---------- */
 export const markReminded = async id => ok(await sb.rpc('mark_reminded', {p_id: id}));

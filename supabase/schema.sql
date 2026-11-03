@@ -527,9 +527,7 @@ revoke execute on function public.claim_otp(text, text) from public;
 grant execute on function public.claim_otp(text, text) to anon, authenticated;
 
 -- ===========================================================================
--- Administration : réservée aux comptes listés dans public.admins.
--- Pour se déclarer admin (une seule fois, dans le SQL Editor) :
---   insert into public.admins (user_id) select id from auth.users where email = 'VOTRE_EMAIL';
+-- Administration : par code (voir admin_set_code ci-dessous) ou par un compte listé dans public.admins.
 -- ===========================================================================
 create table if not exists public.admins (
   user_id     uuid primary key references auth.users (id) on delete cascade,
@@ -538,9 +536,78 @@ create table if not exists public.admins (
 alter table public.admins enable row level security;
 revoke all on public.admins from anon, authenticated;
 
+-- Connexion à l'admin par code seul (sans compte). Le code se choisit dans le SQL Editor :
+--   select public.admin_set_code('VOTRE-CODE');   (12 caractères au moins)
+-- Un code juste donne un jeton de séance (12 h) que la page admin envoie dans l'en-tête x-admin-token.
+-- 5 erreurs de suite bloquent la connexion 15 minutes.
+create table if not exists public.admin_key (
+  id            smallint primary key default 1 check (id = 1),
+  hash          text not null,
+  fails         int not null default 0,
+  locked_until  timestamptz,
+  updated_at    timestamptz not null default now()
+);
+create table if not exists public.admin_sessions (
+  token_hash  text primary key,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+alter table public.admin_key enable row level security;
+alter table public.admin_sessions enable row level security;
+revoke all on public.admin_key, public.admin_sessions from anon, authenticated;
+
+create or replace function public.admin_set_code(p_code text)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if length(coalesce(p_code, '')) < 12 then raise exception 'Choisissez un code d’au moins 12 caractères.'; end if;
+  insert into public.admin_key (id, hash) values (1, extensions.crypt(p_code, extensions.gen_salt('bf', 10)))
+  on conflict (id) do update set hash = excluded.hash, fails = 0, locked_until = null, updated_at = now();
+  delete from public.admin_sessions;   -- nouveau code : les séances ouvertes sont fermées
+end $$;
+revoke execute on function public.admin_set_code(text) from public, anon, authenticated;
+
+create or replace function public.admin_token_hash()
+returns text language sql stable set search_path = '' as $$
+  select encode(extensions.digest(coalesce(current_setting('request.headers', true)::json ->> 'x-admin-token', ''), 'sha256'), 'hex');
+$$;
+revoke execute on function public.admin_token_hash() from public, anon, authenticated;
+
+-- Un mauvais code ne lève pas d'erreur : le compteur d'essais doit être enregistré
+create or replace function public.admin_login(p_code text)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare
+  k public.admin_key;
+  v_token text;
+begin
+  select * into k from public.admin_key where id = 1 for update;   -- un essai à la fois
+  if not found then return jsonb_build_object('error', 'Aucun code administrateur n’est défini.'); end if;
+  if k.locked_until > now() then return jsonb_build_object('error', 'Trop d’essais. Réessayez dans 15 minutes.'); end if;
+  if extensions.crypt(coalesce(p_code, ''), k.hash) <> k.hash then
+    perform pg_sleep(1);
+    update public.admin_key set fails = case when fails + 1 >= 5 then 0 else fails + 1 end,
+      locked_until = case when fails + 1 >= 5 then now() + interval '15 minutes' else locked_until end
+    where id = 1;
+    return jsonb_build_object('error', 'Code incorrect.');
+  end if;
+  update public.admin_key set fails = 0 where id = 1;
+  delete from public.admin_sessions where expires_at < now();
+  v_token := encode(extensions.gen_random_bytes(32), 'hex');
+  insert into public.admin_sessions (token_hash, expires_at)
+  values (encode(extensions.digest(v_token, 'sha256'), 'hex'), now() + interval '12 hours');
+  return jsonb_build_object('token', v_token);
+end $$;
+
+create or replace function public.admin_logout()
+returns void language sql security definer set search_path = '' as $$
+  delete from public.admin_sessions where token_hash = public.admin_token_hash();
+$$;
+revoke execute on function public.admin_login(text), public.admin_logout() from public;
+grant execute on function public.admin_login(text), public.admin_logout() to anon, authenticated;
+
 create or replace function public.is_admin()
 returns boolean language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.admins where user_id = auth.uid());
+  select exists (select 1 from public.admins where user_id = auth.uid())
+      or exists (select 1 from public.admin_sessions where token_hash = public.admin_token_hash() and expires_at > now());
 $$;
 
 create or replace function public.admin_check()
@@ -562,7 +629,8 @@ begin
   return jsonb_build_object(
     'users',        (select count(*) from auth.users),
     'users_7d',     (select count(*) from auth.users where created_at > now() - interval '7 days'),
-    'active_7d',    (select count(*) from auth.users where last_sign_in_at > now() - interval '7 days'),
+    'active_7d',    (select count(*) from auth.users u left join public.profiles p on p.id = u.id
+                     where greatest(u.last_sign_in_at, p.last_seen_at) > now() - interval '7 days'),
     'pro',          (select count(*) from public.profiles where plan = 'pro'),
     'by_phone',     (select count(*) from auth.users where phone is not null and phone <> ''),
     'documents',    (select count(*) from public.documents),
@@ -582,7 +650,7 @@ language plpgsql stable security definer set search_path = '' as $$
 begin
   perform public.admin_check();
   return query
-  select u.id, u.email::text, u.phone::text, u.created_at, u.last_sign_in_at,
+  select u.id, u.email::text, u.phone::text, u.created_at, greatest(u.last_sign_in_at, p.last_seen_at),   -- dernière ouverture de l'application
          (u.email_confirmed_at is not null or u.phone_confirmed_at is not null),
          coalesce(p.name, ''), coalesce(p.job, ''), coalesce(p.plan, 'free'),
          (select count(*) from public.clients c where c.user_id = u.id),
@@ -617,7 +685,7 @@ end $$;
 revoke execute on function public.is_admin(), public.admin_check(), public.admin_overview(), public.admin_users(),
   public.admin_set_plan(uuid, text), public.admin_gateway() from public, anon;
 grant execute on function public.is_admin(), public.admin_overview(), public.admin_users(),
-  public.admin_set_plan(uuid, text), public.admin_gateway() to authenticated;
+  public.admin_set_plan(uuid, text), public.admin_gateway() to anon, authenticated;   -- la page admin se connecte par code, sans compte
 
 -- ===========================================================================
 -- Étape 4 : relances préparées (le freelance les envoie depuis son WhatsApp)
@@ -796,5 +864,15 @@ end $$;
 
 revoke execute on function public.admin_create_codes(int, int, text), public.admin_codes(), public.admin_delete_code(text),
   public.redeem_pro_code(text) from public, anon;
-grant execute on function public.admin_create_codes(int, int, text), public.admin_codes(), public.admin_delete_code(text),
-  public.redeem_pro_code(text) to authenticated;
+grant execute on function public.admin_create_codes(int, int, text), public.admin_codes(), public.admin_delete_code(text) to anon, authenticated;
+grant execute on function public.redeem_pro_code(text) to authenticated;
+
+-- Dernière ouverture de l'application (la connexion Supabase dure des semaines : last_sign_in_at ne suffit pas)
+alter table public.profiles add column if not exists last_seen_at timestamptz;
+create or replace function public.touch_seen()
+returns void language sql security definer set search_path = '' as $$
+  update public.profiles set last_seen_at = now()
+  where id = auth.uid() and (last_seen_at is null or last_seen_at < now() - interval '5 minutes');
+$$;
+revoke execute on function public.touch_seen() from public, anon;
+grant execute on function public.touch_seen() to authenticated;
