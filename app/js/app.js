@@ -118,7 +118,7 @@ const remindWhen = d => { const n = lateDays(d); return n < 0 ? `échéance dans
 const remindRank = d => d.reminder_count ? `${d.reminder_count + 1}ᵉ relance` : '1ʳᵉ relance';
 
 /* ---------- Écrans hors connexion ---------- */
-const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Faybi SN</b><small>Pour les freelances</small></div></div>`;
+const brand = `<div class="brand"><span class="mark" aria-hidden="true">F</span><div><b>Faybi SN</b><small>Pour les freelances</small></div></div>`;
 const msgs = () => `${ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : ''}${ui.info ? `<div class="ok" role="status">${esc(ui.info)}</div>` : ''}`;
 
 function vSetup() {

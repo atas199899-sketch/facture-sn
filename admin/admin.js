@@ -38,7 +38,7 @@ const ago = ts => {
 };
 // Référence indiquée par le freelance avec son paiement Pro (même calcul que dans l'application)
 const refOf = u => 'FSN-' + u.id.slice(0, 6).toUpperCase();
-const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Faybi SN</b><small>Administration</small></div></div>`;
+const brand = `<div class="brand"><span class="mark" aria-hidden="true">F</span><div><b>Faybi SN</b><small>Administration</small></div></div>`;
 
 /* ---------- Données ---------- */
 async function load() {
