@@ -14,5 +14,6 @@ export const WHATSAPP_GATEWAY = '221788597452';
 // Formule Pro, payée à la main au début : numéro Wave / Orange Money qui reçoit les paiements,
 // et numéro WhatsApp à prévenir (format international sans espaces, ex. '221770000000').
 // Tant que PRO_PAY_NUMBER est vide, la page Pro annonce l'ouverture prochaine du paiement.
-export const PRO_PAY_NUMBER = '';
+export const PRO_PAY_NUMBER = '221788597452';
+// Pas le numéro de la passerelle : il répond automatiquement à tous les messages.
 export const SUPPORT_WHATSAPP = '';
