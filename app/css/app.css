@@ -301,7 +301,12 @@ input[type=password]:focus{outline:2px solid var(--accent);outline-offset:-1px;b
 
 /* Fichier PDF fabriqué dans le navigateur (html2pdf) : même rendu que l'impression, toujours en clair */
 :root:root:root.pdfmode{--paper:#fff;--ink:#13231E;--muted:#5A6B65;--line:#D6DED9;--paper-line:#E3E9E5;--accent:#0A6B53;--good:#1D7A3E;--bad:#B42B22;--sunk:#E7ECE9;color-scheme:light}
-.pdfmode .paper{border:0;border-radius:0;box-shadow:none;padding:0;max-width:none}
+/* Largeur A4 fixe et mise en page « ordinateur », même depuis un téléphone */
+.pdfmode .paper{border:0;border-radius:0;box-shadow:none;padding:0!important;margin:0!important;width:700px!important;max-width:700px!important;box-sizing:border-box}
+.pdfmode .p-title{text-align:right}
+.pdfmode .p-title dl{justify-content:end}
+.pdfmode .p-title dt,.pdfmode .p-title dd{text-align:right}
+.pdfmode .p-sum dl{min-width:300px;width:auto}
 
 /* Impression et « Enregistrer en PDF » : seule la feuille est imprimée, toujours en clair */
 @media print{

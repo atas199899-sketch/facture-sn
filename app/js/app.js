@@ -775,7 +775,7 @@ async function makePdf(d) {
   if (!el) throw new Error('Ouvrez le document pour préparer son PDF.');
   const blob = await html2pdf().set({
     margin: 10, image: {type: 'jpeg', quality: 0.95},
-    html2canvas: {scale: 2, windowWidth: 1100, backgroundColor: '#ffffff', onclone: doc => { doc.documentElement.classList.add('pdfmode'); doc.documentElement.dataset.theme = 'light'; }},
+    html2canvas: {scale: 2, scrollX: 0, scrollY: 0, backgroundColor: '#ffffff', onclone: doc => { doc.documentElement.classList.add('pdfmode'); doc.documentElement.dataset.theme = 'light'; }},
     jsPDF: {unit: 'mm', format: 'a4', orientation: 'portrait'},
     pagebreak: {mode: ['css', 'legacy'], avoid: ['tr', '.p-sign', '.p-sum']}
   }).from(el).outputPdf('blob');
