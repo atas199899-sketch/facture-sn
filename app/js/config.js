@@ -10,3 +10,9 @@ export const SUPABASE_ANON_KEY = 'sb_publishable_pd1kEQE6eQMEvz1gb2UwPw_C2Y1ITrl
 // Numéro WhatsApp de la passerelle de connexion (téléphone avec MacroDroid), format international
 // sans espaces, ex. '221770000000'. Laissez vide pour masquer la connexion par numéro.
 export const WHATSAPP_GATEWAY = '221788597452';
+
+// Formule Pro, payée à la main au début : numéro Wave / Orange Money qui reçoit les paiements,
+// et numéro WhatsApp à prévenir (format international sans espaces, ex. '221770000000').
+// Tant que PRO_PAY_NUMBER est vide, la page Pro annonce l'ouverture prochaine du paiement.
+export const PRO_PAY_NUMBER = '';
+export const SUPPORT_WHATSAPP = '';

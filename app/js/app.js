@@ -1,14 +1,15 @@
 // Faybi SN : écrans et navigation de l'application connectée
 // Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures. Étape 3 : paiements reçus. Étape 4 : relances.
+// Formule Pro : factures illimitées, logo, couleur, signature et cachet ; PDF partagé dans WhatsApp.
 import * as db from './db.js';
-import {WHATSAPP_GATEWAY} from './config.js';
+import {WHATSAPP_GATEWAY, PRO_PAY_NUMBER, SUPPORT_WHATSAPP} from './config.js';
 import {esc, num, parseNum, isEur, amt, amtShort, toMinor, toMajor, toXOF, decimal, today, addDays, fmtDate, totals, sommeEnLettres} from './format.js';
 
 const $ = s => document.querySelector(s);
 
 const state = {session: null, profile: null, clients: [], catalog: [], docs: [], payments: [], loaded: false, loadErr: ''};
 const ui = {view: 'home', authMode: 'login', err: '', info: '', busy: false, clientDraft: null, catDraft: null, confirm: null, recovery: false,
-  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null, delAsk: false};
+  doc: null, draft: null, filter: 'all', q: '', share: false, back: null, phone: '', phoneStep: 1, pay: null, payDel: null, delAsk: false, sigPad: false, imgKey: null, pdf: null};
 
 /* ---------- Messages d'erreur lisibles ---------- */
 function humanError(e) {
@@ -19,6 +20,7 @@ function humanError(e) {
   if (/Token has expired or is invalid|otp.*(expired|invalid)/i.test(m)) return 'Code incorrect ou expiré. Redemandez un code.';
   if (/security purposes/i.test(m)) return 'Patientez quelques secondes avant de redemander un code.';
   if (/phone.*(disabled|provider)|Unsupported phone/i.test(m)) return 'La connexion par numéro n’est pas encore activée. Utilisez votre e-mail.';
+  if (/Code Pro invalide/i.test(m)) return 'Ce code Pro n’est pas valable ou a déjà été utilisé. Vérifiez-le (format PRO-XXXX-XXXX).';
   if (/Password should be at least/i.test(m)) return 'Le mot de passe doit contenir au moins 6 caractères.';
   if (/rate limit|too many/i.test(m)) return 'Trop de tentatives. Patientez quelques minutes avant de réessayer.';
   if (/valid email|invalid email/i.test(m)) return 'Cette adresse e-mail n’est pas valide.';
@@ -65,6 +67,15 @@ const pill = s => `<span class="pill ${ST[s][1]}">${ST[s][0]}</span>`;
 const clientOf = id => state.clients.find(c => c.id === id);
 const cName = id => clientOf(id)?.name || 'Client supprimé';
 const docLabel = d => d.number || (d.type === 'DEV' ? 'Devis brouillon' : 'Facture brouillon');
+
+/* ---------- Formule ---------- */
+const FREE_INVOICES = 5;
+// Pro actif : formule Pro sans date de fin, ou date de fin pas encore passée (Pro acheté par code)
+const isPro = () => state.profile?.plan === 'pro' && (!state.profile.pro_until || state.profile.pro_until >= today());
+const proLabel = () => isPro() ? `Pro${state.profile.pro_until ? ` jusqu’au ${fmtDate(state.profile.pro_until)}` : ''}` : 'Gratuit';
+// Factures validées ce mois-ci (les annulées comptent aussi)
+const monthInvoices = () => state.docs.filter(d => d.type === 'FAC' && d.status !== 'draft' && (d.sent_at || '').slice(0, 7) === today().slice(0, 7)).length;
+const proRef = () => 'FSN-' + state.profile.id.slice(0, 6).toUpperCase();
 
 /* ---------- Relances : calendrier ---------- */
 // 3 jours avant l'échéance, le jour même, 7 et 15 jours après, puis tous les 15 jours
@@ -218,6 +229,7 @@ function vHome() {
       <div class="tablewrap">${remindTable(toRemind.slice(0, 5))}</div></section>` : ''}
     ${nd ? `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Derniers documents</h2><button class="btn ghost sm" data-act="go" data-view="docs">Tout voir</button></div>
       <div class="tablewrap">${docTable(state.docs.slice(0, 5))}</div></section>` : ''}
+    ${isPro() ? '' : `<p class="note">Formule gratuite : ${monthInvoices()} facture${monthInvoices() > 1 ? 's' : ''} validée${monthInvoices() > 1 ? 's' : ''} sur ${FREE_INVOICES} ce mois-ci. <a href="#" data-act="go" data-view="pro">Passer en Pro</a> pour des factures illimitées, votre logo, votre signature et votre cachet.</p>`}
     <p class="note">Bêta : les liens de paiement Wave / Orange Money et les relances automatiques par e-mail arrivent aux prochaines étapes.</p>
   </div>`;
 }
@@ -274,7 +286,7 @@ function waLink(phone, text) {
 }
 // Mention « Créé avec Faybi SN » sur les documents des comptes gratuits (retirée en Pro)
 const MADE_URL = 'https://faybi-sn.pages.dev/?ref=facture';
-const showMade = () => state.profile?.plan !== 'pro';
+const showMade = () => !isPro();
 function documentText(d, co, c) {
   const dev = d.type === 'DEV';
   const dep = d.deposit_amount ? `\n\nPour démarrer, un acompte de ${d.deposit_pct} % est demandé, soit ${amt(d.currency, d.deposit_amount)}.` : '';
@@ -301,11 +313,12 @@ function reminderText(d, co, c) {
 }
 
 function paper(d, co, c) {
-  const dev = d.type === 'DEV', cur = d.currency;
-  return `<article class="paper" aria-label="Aperçu du document">
+  const dev = d.type === 'DEV', cur = d.currency, P = state.profile || {}, pro = isPro();
+  const logo = pro && P.logo_img, sig = pro && P.signature_img, stp = pro && P.stamp_img;
+  return `<article class="paper" aria-label="Aperçu du document"${pro && P.brand_color ? ` style="--accent:${esc(P.brand_color)}"` : ''}>
     ${d.status === 'draft' ? '<div class="watermark" aria-hidden="true">BROUILLON</div>' : ''}
     <div class="p-top">
-      <div class="p-co"><b>${esc(co.name || 'Votre nom')}</b>${co.job ? `<div class="job">${esc(co.job)}</div>` : ''}
+      <div class="p-co">${logo ? `<img src="${logo}" alt="" class="p-logo">` : ''}<b>${esc(co.name || 'Votre nom')}</b>${co.job ? `<div class="job">${esc(co.job)}</div>` : ''}
         <div>${esc(co.address)}${co.address ? '<br>' : ''}${esc(co.phone_pay)}${co.email ? ' · ' + esc(co.email) : ''}${co.ninea ? '<br>NINEA : ' + esc(co.ninea) : ''}</div></div>
       <div class="p-title"><h3>${dev ? 'DEVIS' : 'FACTURE'}</h3>
         <dl><dt>N°</dt><dd>${esc(d.number || 'attribué à la validation')}</dd><dt>Date</dt><dd>${fmtDate(d.issue_date)}</dd>
@@ -328,6 +341,9 @@ function paper(d, co, c) {
       <div class="p-sec"><div class="lbl">Paiement</div><ul>${isEur(cur) ? '<li>Virement bancaire (coordonnées sur demande)</li>' : `<li>Wave et Orange Money : ${esc(co.phone_pay || '—')}</li><li>Virement ou espèces</li>`}</ul></div>
       ${d.notes || co.mentions ? `<div class="p-sec"><div class="lbl">Conditions</div><div class="muted">${esc(d.notes)}${d.notes && co.mentions ? '<br>' : ''}${esc(co.mentions)}</div></div>` : ''}
     </div>
+    ${sig || stp ? `<div class="p-sign"><div class="lbl">${stp && sig ? 'Cachet et signature' : stp ? 'Cachet' : 'Signature'}</div>
+      <div class="p-sign-imgs">${stp ? `<img src="${stp}" alt="Cachet" class="p-stamp">` : ''}${sig ? `<img src="${sig}" alt="Signature" class="p-sig">` : ''}</div>
+      <div>${esc(co.name || '')}</div></div>` : ''}
     ${showMade() ? `<p class="p-made">${dev ? 'Devis créé' : 'Facture créée'} avec <a href="${MADE_URL}" target="_blank" rel="noopener">Faybi SN</a> · facturation gratuite pour les freelances · faybi-sn.pages.dev</p>` : ''}
   </article>`;
 }
@@ -369,7 +385,7 @@ function vDoc() {
       ${draft ? `<button class="btn primary" data-act="askConfirm" data-c="finalize">Valider et numéroter</button><button class="btn" data-act="edit">Modifier</button>` : ''}
       ${dev && d.status === 'sent' && !d.converted_to ? `<button class="btn primary" data-act="convert">Le client accepte : créer la facture</button>` : ''}
       ${rest > 0 ? `<button class="btn primary" data-act="payNew">Enregistrer un paiement</button>` : ''}
-      ${d.status === 'sent' ? `<button class="btn" data-act="print">Télécharger le PDF</button><button class="btn" data-act="share" data-mode="send">Envoyer par WhatsApp</button>` : ''}
+      ${d.status === 'sent' ? `<button class="btn" data-act="share" data-mode="send">Envoyer par WhatsApp</button><button class="btn" data-act="pdfDownload">Télécharger le PDF</button><button class="btn ghost hide-sm" data-act="print">Imprimer</button>` : ''}
       ${rest > 0 ? `<button class="btn" data-act="share" data-mode="remind">Relancer</button>` : ''}
       ${draft ? '' : `<button class="btn" data-act="dup">Dupliquer</button>`}
       ${draft ? `<button class="btn danger" data-act="askConfirm" data-c="del">Supprimer</button>` : ''}
@@ -378,7 +394,8 @@ function vDoc() {
   <div class="stack">
     ${confirm ? `<div class="panel alert noprint"><b>${confirm[0]}</b>
       <div class="row"><button class="btn ${confirm[3]}" data-act="${confirm[1]}" ${ui.busy ? 'disabled' : ''}>${confirm[2]}</button><button class="btn" data-act="cancelConfirm">Retour</button></div></div>` : ''}
-    ${ui.err && !p ? `<div class="err noprint" role="alert">${esc(ui.err)}</div>` : ''}
+    ${ui.err && !p ? `<div class="err noprint" role="alert">${esc(ui.err)}${/Passez en Pro/.test(ui.err) ? ` <a href="#" data-act="go" data-view="pro">Voir la formule Pro</a>` : ''}</div>` : ''}
+    ${draft && !dev && !isPro() ? `<p class="note noprint">Formule gratuite : ${monthInvoices()} facture${monthInvoices() > 1 ? 's' : ''} validée${monthInvoices() > 1 ? 's' : ''} sur ${FREE_INVOICES} ce mois-ci.</p>` : ''}
     ${rest > 0 ? remindInfo(d, c) : ''}
     ${draft ? `<p class="note noprint">Brouillon : vous pouvez encore le modifier. Validez-le pour lui donner son numéro, puis téléchargez le PDF ou envoyez-le par WhatsApp.</p>` : ''}
     ${p ? `<form class="panel noprint" id="payform"><h2>Enregistrer un paiement</h2>
@@ -396,9 +413,10 @@ function vDoc() {
         <td class="num"><button class="btn ghost sm" data-act="payAskDel" data-id="${x.id}" aria-label="Supprimer ce paiement">Supprimer</button></td></tr>`).join('')}</tbody></table></div></section>` : ''}
     ${ui.share ? `<div class="panel noprint"><h2>${ui.share === 'remind' ? 'Message de relance' : 'Message d’envoi'}</h2>
       <textarea id="relmsg" class="relmsg" aria-label="Message">${esc(msg)}</textarea>
-      <div class="row"><a class="btn primary" id="walink" href="${esc(waLink(c.phone, msg))}" ${ui.share === 'remind' ? `data-act="remindWa" data-id="${d.id}"` : 'target="_blank" rel="noopener"'}>Ouvrir WhatsApp</a>
+      <div class="row">${shareFiles() ? `<button class="btn ${ui.share === 'send' ? 'primary' : ''}" id="pdfsend" data-act="sendPdf" ${pdfReady(d) ? '' : 'disabled'}>${pdfReady(d) ? 'Envoyer avec le PDF' : 'Préparation du PDF…'}</button>` : ''}
+        <a class="btn ${ui.share === 'remind' || !shareFiles() ? 'primary' : ''}" id="walink" href="${esc(waLink(c.phone, msg))}" ${ui.share === 'remind' ? `data-act="remindWa" data-id="${d.id}"` : 'target="_blank" rel="noopener"'}>${ui.share === 'remind' ? 'Ouvrir WhatsApp' : shareFiles() ? 'Message seul' : 'Ouvrir WhatsApp'}</a>
         <button class="btn" data-act="copy">Copier le message</button><button class="btn ghost" data-act="closeShare">Fermer</button></div>
-      <small class="muted">Destinataire : ${esc(c.phone || 'aucun numéro enregistré')}.${ui.share === 'remind' ? ' La relance est notée dès que vous ouvrez WhatsApp.' : ' Pensez à joindre le PDF téléchargé dans la conversation.'}</small></div>` : ''}
+      <small class="muted">Destinataire : ${esc(c.phone || 'aucun numéro enregistré')}.${shareFiles() ? ' « Envoyer avec le PDF » ouvre le partage du téléphone : choisissez WhatsApp, puis votre client. Le PDF et le message partent ensemble.' : ' Téléchargez le PDF, puis joignez-le dans la conversation WhatsApp.'}${ui.share === 'remind' ? ' La relance est notée dès l’envoi.' : ''}</small></div>` : ''}
     ${paper(d, co, c)}
   </div>`;
 }
@@ -525,10 +543,61 @@ function vCatalog() {
   </div>`;
 }
 
+// Logo, couleur, signature et cachet : réservés au Pro (la base refuse aussi l'ajout en gratuit)
+function brandCard(p) {
+  const pro = isPro(), off = pro ? '' : 'disabled';
+  const box = (k, label, acts) => `<div class="brand-box"><b>${label}</b>
+    <div class="brand-show">${p[k] ? `<img src="${p[k]}" alt="${label}">` : '<span class="muted">Aucun élément</span>'}</div>
+    <div class="row">${acts}${p[k] ? `<button class="btn sm ghost" data-act="imgDel" data-k="${k}" ${ui.busy ? 'disabled' : ''}>Retirer</button>` : ''}</div></div>`;
+  const pick = k => `<button class="btn sm" data-act="imgPick" data-k="${k}" ${off}>Importer une image</button>`;
+  return `<section class="card stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Logo, signature et cachet</h2>${pro ? '<span class="pill good">Pro</span>' : '<span class="pill neutral">Pro</span>'}</div>
+    <p class="muted" style="margin:0">${pro ? 'Ils apparaissent sur vos devis et factures. Pour la signature et le cachet, une photo sur papier blanc suffit : le fond blanc est retiré automatiquement.'
+      : 'Avec la formule Pro, ajoutez votre logo, votre couleur, votre signature et votre cachet sur vos devis et factures. <a href="#" data-act="go" data-view="pro">Passer en Pro</a>'}</p>
+    <div class="brand-grid">
+      ${box('logo_img', 'Logo', pick('logo_img'))}
+      ${box('signature_img', 'Signature', `<button class="btn sm" data-act="sigDraw" ${off}>Signer à l’écran</button>${pick('signature_img')}`)}
+      ${box('stamp_img', 'Cachet', pick('stamp_img'))}
+      <div class="brand-box"><b>Couleur</b><div class="brand-show"><input type="color" id="s-color" value="${esc(p.brand_color || '#0A6B53')}" aria-label="Couleur des documents" ${off}></div>
+        <div class="row">${p.brand_color ? `<button class="btn sm ghost" data-act="colorReset">Couleur d’origine</button>` : '<small class="muted">Titres et filets des documents</small>'}</div></div>
+    </div>
+    ${ui.sigPad ? `<div class="panel stack"><b>Signez dans le cadre, au doigt ou à la souris</b><canvas id="sigpad" class="sigpad" width="600" height="220"></canvas>
+      <div class="row"><button class="btn primary sm" data-act="sigSave" ${ui.busy ? 'disabled' : ''}>Enregistrer la signature</button><button class="btn sm" data-act="sigClear">Effacer</button><button class="btn sm ghost" data-act="sigCancel">Annuler</button></div></div>` : ''}
+    <input type="file" id="imgfile" accept="image/png,image/jpeg,image/webp" hidden>
+  </section>`;
+}
+
+/* ---------- Formule Pro ---------- */
+function vPro() {
+  const pro = isPro(), used = monthInvoices(), ref = proRef();
+  const li = a => `<ul class="ticks">${a.map(x => `<li>${x}</li>`).join('')}</ul>`;
+  const wa = SUPPORT_WHATSAPP && `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(`Bonjour Faybi SN, je viens de payer la formule Pro. Référence : ${ref}`)}`;
+  return `<div class="head"><div><button class="btn ghost sm" data-act="go" data-view="profile">← Paramètres</button><h1 style="margin-top:8px">Formule Pro</h1>
+      <p>${pro ? `Votre compte est en ${proLabel()}. Merci pour votre confiance !` : `Formule gratuite : ${used} facture${used > 1 ? 's' : ''} validée${used > 1 ? 's' : ''} sur ${FREE_INVOICES} ce mois-ci.`}</p></div></div>
+  <div class="stack">
+    <div class="grid2">
+      <section class="card plan-card"><h2>Gratuit</h2><div class="price">0 <small>FCFA</small></div>
+        ${li([`${FREE_INVOICES} factures par mois`, 'Devis et clients illimités', 'Envoi sur WhatsApp avec le PDF', 'Paiements reçus et relances du jour', 'Mention « Créé avec Faybi SN »'])}</section>
+      <section class="card plan-card hl"><h2>Pro</h2><div class="price">3 000 <small>FCFA / mois</small></div><p class="muted" style="margin:0">ou 30 000 FCFA par an, soit 2 mois offerts</p>
+        ${li(['Factures illimitées', 'Votre logo et votre couleur', 'Votre signature et votre cachet', 'Sans la mention Faybi SN', 'Bientôt : liens de paiement Wave et relances par e-mail, sans supplément'])}</section>
+    </div>
+    ${pro ? '' : PRO_PAY_NUMBER ? `<section class="card stack"><h2 style="margin:0">Passer en Pro</h2>
+      <ol class="olist">
+        <li>Envoyez <b>3 000 FCFA</b> (un mois) ou <b>30 000 FCFA</b> (un an) par Wave ou Orange Money au <b class="mono">${esc(showPhone('+' + PRO_PAY_NUMBER))}</b>.</li>
+        <li>Indiquez la référence <b class="mono">${ref}</b> dans le paiement.</li>
+        <li>Prévenez-nous${wa ? ' sur WhatsApp' : ''} : nous vous envoyons un <b>code Pro</b> dans la journée. Saisissez-le ci-dessous.</li></ol>
+      <div class="row">${wa ? `<a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">J’ai payé : prévenir sur WhatsApp</a>` : ''}<button class="btn" data-act="copyRef">Copier la référence</button></div></section>`
+      : `<section class="card"><h2 style="margin:0 0 6px">Bientôt disponible</h2><p class="muted" style="margin:0">Le paiement de la formule Pro ouvre très prochainement. Votre référence sera <b class="mono">${ref}</b>.</p></section>`}
+    <form id="proform" class="card stack"><h2 style="margin:0">${pro ? 'Prolonger avec un code Pro' : 'J’ai un code Pro'}</h2>
+      <div class="row"><input type="text" id="pro-code" placeholder="PRO-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" style="max-width:260px" aria-label="Code Pro">
+        <button type="submit" class="btn primary" ${ui.busy ? 'disabled' : ''}>Activer</button></div>
+      ${msgs()}</form>
+  </div>`;
+}
+
 function vProfile() {
   const p = state.profile;
   const f = (k, l, ph = '', type = 'text') => `<label class="field">${l}<input type="${type}" id="s-${k}" value="${esc(p[k])}" placeholder="${ph}"></label>`;
-  const plan = p.plan === 'pro' ? 'Pro' : 'Gratuit';
+  const plan = proLabel();
   return `<div class="head"><div><h1>Paramètres</h1><p>Votre profil, vos préférences et votre compte.</p></div></div>
   <div class="stack">
     <form id="profileform" class="card stack"><h2 style="margin:0">Mon profil</h2>
@@ -542,6 +611,7 @@ function vProfile() {
       ${msgs()}
       <div class="row"><button type="submit" class="btn primary" ${ui.busy ? 'disabled' : ''}>Enregistrer</button></div>
     </form>
+    ${brandCard(p)}
     <form id="prefsform" class="card stack"><h2 style="margin:0">Préférences</h2>
       <div class="fgrid">
         <label class="field">Délai de paiement des factures (jours)<input type="number" id="s-due_days" min="0" max="365" value="${p.due_days ?? 15}"></label>
@@ -554,8 +624,8 @@ function vProfile() {
       <div class="row"><button class="btn" data-act="exportCsv">Exporter mes factures (Excel)</button><button class="btn" data-act="exportJson" ${ui.busy ? 'disabled' : ''}>Télécharger toutes mes données</button></div>
     </section>
     <section class="card stack" style="gap:12px"><h2 style="margin:0">Compte</h2>
-      <p class="muted" style="margin:0">Connecté avec ${esc(userLabel(state.session.user))} · formule ${plan}.</p>
-      <div class="row"><button class="btn" data-act="logout">Se déconnecter</button></div>
+      <p class="muted" style="margin:0">Connecté avec ${esc(userLabel(state.session.user))} · formule ${plan}${isPro() ? '' : ` · ${monthInvoices()} facture${monthInvoices() > 1 ? 's' : ''} sur ${FREE_INVOICES} ce mois-ci`}.</p>
+      <div class="row">${isPro() ? `<button class="btn" data-act="go" data-view="pro">Ma formule Pro</button>` : `<button class="btn primary" data-act="go" data-view="pro">Passer en Pro</button>`}<button class="btn" data-act="logout">Se déconnecter</button></div>
       <p class="muted" style="margin:0"><a href="../confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a> · <a href="../conditions.html" target="_blank" rel="noopener">Conditions d’utilisation</a></p>
     </section>
     <section class="card stack danger-zone" style="gap:12px"><h2 style="margin:0">Supprimer mon compte</h2>
@@ -569,7 +639,7 @@ function vProfile() {
   </div>`;
 }
 
-const views = {home: vHome, docs: vDocs, doc: vDoc, edit: vEdit, clients: vClients, client: vClient, catalog: vCatalog, profile: vProfile};
+const views = {home: vHome, docs: vDocs, doc: vDoc, edit: vEdit, clients: vClients, client: vClient, catalog: vCatalog, profile: vProfile, pro: vPro};
 const NAV = [['home', 'Accueil', 'Accueil'], ['docs', 'Factures et devis', 'Factures'], ['clients', 'Clients', 'Clients'], ['catalog', 'Mes tarifs', 'Tarifs'], ['profile', 'Paramètres', 'Réglages']];
 const ico = d => `<svg class="ni" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS = {
@@ -579,7 +649,7 @@ const ICONS = {
   catalog: ico('<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>'),
   profile: ico('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>')
 };
-const navOf = {home: 'home', docs: 'docs', doc: 'docs', edit: 'docs', clients: 'clients', client: 'clients', catalog: 'catalog', profile: 'profile'};
+const navOf = {home: 'home', docs: 'docs', doc: 'docs', edit: 'docs', clients: 'clients', client: 'clients', catalog: 'catalog', profile: 'profile', pro: 'profile'};
 
 function render(scroll) {
   const root = $('#root');
@@ -597,10 +667,12 @@ function render(scroll) {
       <nav aria-label="Navigation">${NAV.map(([v, l, s]) => `<button data-act="go" data-view="${v}" ${navOf[ui.view] === v ? 'aria-current="page"' : ''}>${ICONS[v]}<span class="nl">${l}</span><span class="ns">${s}</span></button>`).join('')}</nav>
       <div class="side-cta"><span class="who">${esc(userLabel(state.session.user))}</span></div></aside>
     <main id="main">${views[ui.view]()}</main></div>`;
+  if (ui.sigPad) initSigPad();
+  if (ui.view === 'doc' && ui.share) preparePdf();
   if (scroll) window.scrollTo(0, 0);
 }
 
-function go(view, extra = {}) { Object.assign(ui, {view, err: '', info: '', confirm: null, catDraft: null, share: false, pay: null, delAsk: false}, extra); render(true); }
+function go(view, extra = {}) { Object.assign(ui, {view, err: '', info: '', confirm: null, catDraft: null, share: false, pay: null, delAsk: false, sigPad: false}, extra); render(true); }
 
 // Exécute une action réseau en affichant l'état « en cours » et les erreurs
 async function run(fn) {
@@ -621,9 +693,110 @@ async function openDoc(id) {
 }
 function refreshSummary(d) {
   const row = {id: d.id, type: d.type, number: d.number, status: d.status, currency: d.currency, client_id: d.client_id, issue_date: d.issue_date,
-    due_date: d.due_date, total_ttc: d.total_ttc, deposit_amount: d.deposit_amount, paid_amount: d.paid_amount, converted_to: d.converted_to, created_at: d.created_at,
+    due_date: d.due_date, total_ttc: d.total_ttc, deposit_amount: d.deposit_amount, paid_amount: d.paid_amount, converted_to: d.converted_to, created_at: d.created_at, sent_at: d.sent_at,
     reminder_count: d.reminder_count, reminded_at: d.reminded_at, remind_after: d.remind_after};
   state.docs = state.docs.some(x => x.id === d.id) ? state.docs.map(x => x.id === d.id ? row : x) : [row, ...state.docs];
+}
+
+/* ---------- Images : logo, signature, cachet ---------- */
+const loadImage = file => new Promise((ok, ko) => {
+  const img = new Image();
+  img.onload = () => ok(img);
+  img.onerror = () => ko(new Error('Image illisible. Choisissez une photo JPG ou PNG.'));
+  img.src = URL.createObjectURL(file);
+});
+// Recadre au plus près du dessin (pixels non transparents)
+function trimCanvas(cv) {
+  const {width: w, height: h} = cv, px = cv.getContext('2d').getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] > 12) {
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return '';
+  const pad = 6, out = document.createElement('canvas');
+  out.width = x1 - x0 + 1 + pad * 2; out.height = y1 - y0 + 1 + pad * 2;
+  out.getContext('2d').drawImage(cv, x0, y0, x1 - x0 + 1, y1 - y0 + 1, pad, pad, x1 - x0 + 1, y1 - y0 + 1);
+  return out.toDataURL('image/png');
+}
+// Réduit l'image ; pour la signature et le cachet, le fond blanc devient transparent
+function toPng(img, maxW, maxH, clearWhite) {
+  for (let k = Math.min(1, maxW / img.width, maxH / img.height); ; k *= 0.75) {
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    if (clearWhite) {
+      const im = ctx.getImageData(0, 0, cv.width, cv.height), a = im.data;
+      for (let i = 0; i < a.length; i += 4) {
+        const m = Math.min(a[i], a[i + 1], a[i + 2]);
+        if (m > 205) a[i + 3] = 0; else if (m > 150) a[i + 3] = Math.round(a[i + 3] * (205 - m) / 55);
+      }
+      ctx.putImageData(im, 0, 0);
+    }
+    const url = clearWhite ? trimCanvas(cv) : cv.toDataURL('image/png');
+    if (url.length <= 380000 || k < 0.1) return url;
+  }
+}
+const IMG_SIZE = {logo_img: [480, 200, false], signature_img: [600, 240, true], stamp_img: [420, 420, true]};
+const saveBrand = (fields, msg) => run(async () => { state.profile = await db.saveProfile(state.profile.id, fields); ui.pdf = null; toast(msg); });
+
+// Zone de signature au doigt ou à la souris
+function initSigPad() {
+  const cv = $('#sigpad');
+  if (!cv || cv.dataset.on) return;
+  cv.dataset.on = '1';
+  const ctx = cv.getContext('2d');
+  Object.assign(ctx, {lineWidth: 3.2, lineCap: 'round', lineJoin: 'round', strokeStyle: '#1B2540'});
+  let last = null;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); last = pos(e); ctx.beginPath(); ctx.arc(...last, 1.4, 0, 7); ctx.fillStyle = ctx.strokeStyle; ctx.fill(); });
+  cv.addEventListener('pointermove', e => { if (!last) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(...last); ctx.lineTo(...p); ctx.stroke(); last = p; });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => cv.addEventListener(t, () => { last = null; }));
+}
+
+/* ---------- PDF : fichier prêt à joindre dans WhatsApp ---------- */
+const PDF_LIB = 'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js';
+let pdfLib = null;
+const loadPdfLib = () => pdfLib ||= new Promise((ok, ko) => {
+  const s = document.createElement('script');
+  s.src = PDF_LIB;
+  s.onload = () => ok(window.html2pdf);
+  s.onerror = () => { pdfLib = null; ko(new Error('Impossible de préparer le PDF. Vérifiez votre connexion.')); };
+  document.head.append(s);
+});
+// Le partage de fichiers (Android, iPhone, certains ordinateurs) permet de joindre le PDF dans WhatsApp
+const shareFiles = () => { try { return Boolean(navigator.canShare?.({files: [new File(['x'], 'x.pdf', {type: 'application/pdf'})]})); } catch { return false; } };
+const pdfKey = d => [d.id, d.status, d.paid_amount, isPro(), state.profile.brand_color, state.profile.logo_img.length, state.profile.signature_img.length, state.profile.stamp_img.length].join('|');
+const pdfReady = d => ui.pdf?.key === pdfKey(d) && ui.pdf.file;
+async function makePdf(d) {
+  const html2pdf = await loadPdfLib();
+  await document.fonts?.ready;
+  const el = $('.paper');
+  if (!el) throw new Error('Ouvrez le document pour préparer son PDF.');
+  const blob = await html2pdf().set({
+    margin: 10, image: {type: 'jpeg', quality: 0.95},
+    html2canvas: {scale: 2, windowWidth: 1100, backgroundColor: '#ffffff', onclone: doc => { doc.documentElement.classList.add('pdfmode'); doc.documentElement.dataset.theme = 'light'; }},
+    jsPDF: {unit: 'mm', format: 'a4', orientation: 'portrait'},
+    pagebreak: {mode: ['css', 'legacy'], avoid: ['tr', '.p-sign', '.p-sum']}
+  }).from(el).outputPdf('blob');
+  return new File([blob], `${d.number || 'document'}.pdf`, {type: 'application/pdf'});
+}
+// Prépare le PDF dès l'ouverture du panneau d'envoi : le partage doit partir tout de suite après le clic
+function preparePdf() {
+  const d = ui.doc;
+  if (!d || d.status !== 'sent' || !shareFiles()) return;
+  const key = pdfKey(d);
+  if (ui.pdf?.key === key) return;
+  ui.pdf = {key, file: null};
+  makePdf(d).then(file => {
+    if (ui.pdf?.key !== key) return;
+    ui.pdf.file = file;
+    const b = $('#pdfsend'); if (b) { b.disabled = false; b.textContent = 'Envoyer avec le PDF'; }
+  }).catch(e => {
+    if (ui.pdf?.key === key) ui.pdf = null;
+    const b = $('#pdfsend'); if (b) b.textContent = 'PDF indisponible';
+    toast(humanError(e));
+  });
 }
 
 // Fait télécharger un fichier créé dans le navigateur
@@ -692,7 +865,7 @@ const acts = {
     const title = document.title; document.title = ui.doc.number || 'Faybi SN';
     window.print(); document.title = title;
   },
-  share: el => { ui.share = ui.share === el.dataset.mode ? false : el.dataset.mode; ui.pay = null; render(); },
+  share: el => { ui.share = ui.share === el.dataset.mode ? false : el.dataset.mode; ui.pay = null; render(); if (ui.share) $('#relmsg')?.scrollIntoView({block: 'center'}); },
   payNew: () => {
     const d = ui.doc, rest = restOf(d), dep = d.deposit_amount - d.paid_amount;
     ui.pay = {amount: toMajor(d.currency, dep > 0 && dep < rest ? dep : rest), method: isEur(d.currency) ? 'Virement' : 'Wave', paid_at: today(), note: ''};
@@ -707,6 +880,38 @@ const acts = {
   }),
   closeShare: () => { ui.share = false; render(); },
   delAsk: () => { ui.delAsk = true; ui.err = ''; render(); $('#s-del')?.focus(); },
+  imgPick: el => { ui.imgKey = el.dataset.k; $('#imgfile').value = ''; $('#imgfile').click(); },
+  imgDel: el => saveBrand({[el.dataset.k]: ''}, 'Élément retiré'),
+  colorReset: () => saveBrand({brand_color: ''}, 'Couleur d’origine rétablie'),
+  sigDraw: () => { ui.sigPad = true; render(); $('#sigpad')?.scrollIntoView({block: 'center'}); },
+  sigClear: () => { const cv = $('#sigpad'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); },
+  sigCancel: () => { ui.sigPad = false; render(); },
+  sigSave: () => {
+    const url = trimCanvas($('#sigpad'));
+    if (!url) { toast('Signez d’abord dans le cadre'); return; }
+    ui.sigPad = false; saveBrand({signature_img: url}, 'Signature enregistrée');
+  },
+  copyRef: () => navigator.clipboard.writeText(proRef()).then(() => toast('Référence copiée')).catch(() => toast(proRef())),
+  // Partage du PDF avec le message (feuille de partage du téléphone : WhatsApp, puis le client)
+  sendPdf: async () => {
+    const d = ui.doc, file = pdfReady(d), text = $('#relmsg')?.value || '', remind = ui.share === 'remind';
+    if (!file) return;
+    navigator.clipboard?.writeText(text).catch(() => {});
+    try {
+      await navigator.share({files: [file], text});
+      if (remind) markReminded(d.id);
+    } catch (e) {
+      if (e.name !== 'AbortError') { download(file.name, file, 'application/pdf'); toast('Partage impossible : le PDF est téléchargé, joignez-le dans WhatsApp.'); }
+    }
+  },
+  pdfDownload: async () => {
+    const d = ui.doc;
+    toast('Préparation du PDF…');
+    try {
+      const file = pdfReady(d) || await makePdf(d);
+      download(file.name, file, 'application/pdf');
+    } catch (e) { toast(humanError(e)); window.print(); }
+  },
   delCancel: () => { ui.delAsk = false; ui.err = ''; render(); },
   exportCsv: () => {
     const head = ['Type', 'Numéro', 'Client', 'Date', 'Échéance', 'Devise', 'Total TTC', 'Payé', 'Reste à payer', 'Statut'];
@@ -782,6 +987,18 @@ document.addEventListener('input', e => {
   }
 });
 
+document.addEventListener('change', async e => {
+  if (e.target.id === 'imgfile' && e.target.files[0] && ui.imgKey) {
+    const k = ui.imgKey, [w, h, clear] = IMG_SIZE[k];
+    try {
+      const url = toPng(await loadImage(e.target.files[0]), w, h, clear);
+      if (!url) { toast('L’image semble vide : essayez une photo plus contrastée.'); return; }
+      saveBrand({[k]: url}, k === 'logo_img' ? 'Logo enregistré' : k === 'stamp_img' ? 'Cachet enregistré' : 'Signature enregistrée');
+    } catch (err) { toast(humanError(err)); }
+  }
+  if (e.target.id === 's-color' && isPro()) saveBrand({brand_color: e.target.value.toUpperCase()}, 'Couleur enregistrée');
+});
+
 const val = id => $('#' + id)?.value.trim() ?? '';
 const upsert = (list, row) => list.some(x => x.id === row.id) ? list.map(x => x.id === row.id ? row : x) : [...list, row];
 const byName = (a, b) => a.name.localeCompare(b.name, 'fr');
@@ -828,6 +1045,15 @@ document.addEventListener('submit', e => {
       goal_xof: Math.max(0, Math.round(parseNum(val('s-goal_xof')))), tva_on: $('#s-tva_on').checked, mentions: val('s-mentions')};
     if (!fields.name) { ui.err = 'Indiquez votre nom.'; return render(); }
     run(async () => { state.profile = await db.saveProfile(state.profile.id, fields); toast('Profil enregistré'); });
+  }
+  if (id === 'proform') {
+    const code = val('pro-code');
+    if (!code) { ui.err = 'Tapez le code Pro reçu.'; return render(); }
+    run(async () => {
+      const until = await db.redeemProCode(code);
+      state.profile = await db.getProfile(state.session.user); ui.pdf = null;
+      toast(until ? `Pro activé jusqu’au ${fmtDate(until)}` : 'Pro activé');
+    });
   }
   if (id === 'prefsform') {
     const days = k => Math.min(365, Math.max(0, Math.round(parseNum(val(k)) || 0)));

@@ -5,7 +5,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 export const configured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 export const sb = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-const PROFILE_FIELDS = ['name', 'job', 'phone_pay', 'email', 'address', 'ninea', 'tva_on', 'goal_xof', 'mentions', 'due_days', 'quote_days', 'reminders_on'];
+const PROFILE_FIELDS = ['name', 'job', 'phone_pay', 'email', 'address', 'ninea', 'tva_on', 'goal_xof', 'mentions', 'due_days', 'quote_days', 'reminders_on', 'logo_img', 'signature_img', 'stamp_img', 'brand_color'];
 const CLIENT_FIELDS = ['name', 'contact', 'phone', 'email', 'address', 'ninea', 'reminders_off'];
 const ITEM_FIELDS = ['name', 'unit', 'price_xof'];
 
@@ -69,7 +69,7 @@ export const deleteItem = async id => ok(await sb.from('catalog_items').delete()
 /* ---------- Devis et factures ---------- */
 // Montants en entiers : francs CFA, ou centimes pour les documents en euros.
 // Numéro, état et totaux sont calculés par la base (voir supabase/schema.sql).
-const DOC_SUMMARY = 'id, type, number, status, currency, client_id, issue_date, due_date, total_ttc, deposit_amount, paid_amount, converted_to, created_at, reminder_count, reminded_at, remind_after';
+const DOC_SUMMARY = 'id, type, number, status, currency, client_id, issue_date, due_date, total_ttc, deposit_amount, paid_amount, converted_to, created_at, sent_at, reminder_count, reminded_at, remind_after';
 export const listDocuments = async () => ok(await sb.from('documents').select(DOC_SUMMARY).order('created_at', {ascending: false}));
 export const getDocument = async id => ok(await sb.from('documents').select('*, lines:document_lines(*), payments(*)').eq('id', id)
   .order('position', {referencedTable: 'document_lines'}).order('paid_at', {referencedTable: 'payments'}).single());
@@ -97,6 +97,10 @@ export async function exportAll() {
   ]);
   return {exported_at: new Date().toISOString(), profile, clients, catalog, documents};
 }
+
+/* ---------- Formule Pro ---------- */
+// Renvoie la date de fin du Pro (null : sans limite)
+export const redeemProCode = async code => ok(await sb.rpc('redeem_pro_code', {p_code: code}));
 
 /* ---------- Relances ---------- */
 export const markReminded = async id => ok(await sb.rpc('mark_reminded', {p_id: id}));

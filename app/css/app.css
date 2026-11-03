@@ -47,6 +47,23 @@ nav{display:flex;flex-direction:column;gap:2px}
 nav button{all:unset;cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:var(--muted);font-weight:500;white-space:nowrap}
 nav .ns{display:none}
 .danger-zone{border-color:color-mix(in srgb,var(--bad, #b42318) 35%,var(--line))}
+.brand-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.brand-box{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;padding:12px}
+.brand-show{min-height:84px;display:grid;place-items:center;background:#fff;border-radius:8px;border:1px dashed var(--line);padding:8px}
+.brand-show img{max-width:100%;max-height:90px}
+.brand-show input[type=color]{width:64px;height:44px;border:0;background:none;cursor:pointer}
+.sigpad{width:100%;max-width:600px;aspect-ratio:600/220;touch-action:none;background:#fff;border:1px dashed var(--muted);border-radius:8px;cursor:crosshair}
+.plan-card .price{font:700 30px var(--f-display);margin:4px 0}
+.plan-card .price small{font:500 14px var(--f-body);color:var(--muted)}
+.plan-card.hl{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.ticks{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+.ticks li::before{content:"✓";color:var(--accent);font-weight:700;margin-right:8px}
+.olist{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.p-logo{display:block;max-height:64px;max-width:220px;margin-bottom:10px}
+.p-sign{margin:22px 0 0 auto;width:max-content;max-width:100%;text-align:center;font-size:12.5px;break-inside:avoid}
+.p-sign-imgs{display:flex;align-items:center;justify-content:center;min-height:56px}
+.p-sig{max-height:80px;max-width:230px;position:relative}
+.p-stamp{max-height:110px;max-width:140px;opacity:.9;transform:rotate(-6deg);margin-right:-34px}
 .panel.remind{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
 nav button:hover{background:var(--sunk);color:var(--ink)}
 nav button[aria-current="page"]{background:var(--accent-soft);color:var(--ink)}
@@ -281,6 +298,10 @@ input[type=password]:focus{outline:2px solid var(--accent);outline-offset:-1px;b
 .watermark{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;
   font:700 clamp(48px,10vw,110px) var(--f-display);letter-spacing:.12em;color:var(--ink);opacity:.06;transform:rotate(-24deg)}
 .stamp.void{border-color:var(--bad);color:var(--bad)}
+
+/* Fichier PDF fabriqué dans le navigateur (html2pdf) : même rendu que l'impression, toujours en clair */
+:root:root:root.pdfmode{--paper:#fff;--ink:#13231E;--muted:#5A6B65;--line:#D6DED9;--paper-line:#E3E9E5;--accent:#0A6B53;--good:#1D7A3E;--bad:#B42B22;--sunk:#E7ECE9;color-scheme:light}
+.pdfmode .paper{border:0;border-radius:0;box-shadow:none;padding:0;max-width:none}
 
 /* Impression et « Enregistrer en PDF » : seule la feuille est imprimée, toujours en clair */
 @media print{

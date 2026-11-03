@@ -297,6 +297,11 @@ begin
   if not found then raise exception 'Document introuvable.'; end if;
   if d.status <> 'draft' then raise exception 'Ce document est déjà validé.'; end if;
   if d.total_ttc <= 0 then raise exception 'Ajoutez au moins une ligne avec un prix.'; end if;
+  -- Formule gratuite : 5 factures validées par mois (les devis restent illimités)
+  if d.type = 'FAC' and not public.is_pro(d.user_id)
+     and (select count(*) from public.documents where user_id = d.user_id and type = 'FAC' and sent_at >= date_trunc('month', now())) >= 5 then
+    raise exception 'Formule gratuite : 5 factures par mois. Passez en Pro pour des factures illimitées.';
+  end if;
   v_year = extract(year from d.issue_date);
   insert into public.number_counters (user_id, type, year, last_value) values (d.user_id, d.type, v_year, 1)
   on conflict (user_id, type, year) do update set last_value = public.number_counters.last_value + 1
@@ -413,6 +418,18 @@ begin
   if not found then raise exception 'Seul un document validé peut être annulé.'; end if;
   return p_id;
 end $$;
+
+-- ===========================================================================
+-- Formule Pro : date de fin quand le Pro vient d'un code (null : sans limite)
+-- ===========================================================================
+alter table public.profiles add column if not exists pro_until date;
+
+create or replace function public.is_pro(p_user uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select coalesce((select plan = 'pro' and (pro_until is null or pro_until >= current_date) from public.profiles where id = p_user), false)
+$$;
+revoke execute on function public.is_pro(uuid) from public, anon;
+grant execute on function public.is_pro(uuid) to authenticated;
 
 -- ===========================================================================
 -- Connexion par numéro de téléphone, code remis par WhatsApp (sans SMS payant)
@@ -581,7 +598,7 @@ create or replace function public.admin_set_plan(p_user uuid, p_plan text)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
   perform public.admin_check();
-  update public.profiles set plan = p_plan where id = p_user;
+  update public.profiles set plan = p_plan, pro_until = null where id = p_user;   -- activation manuelle : sans date de fin
   if not found then raise exception 'Compte introuvable.'; end if;
 end $$;
 
@@ -665,3 +682,119 @@ end $$;
 
 revoke execute on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- ===========================================================================
+-- Formule Pro : logo, couleur, signature et cachet sur les documents
+-- Images PNG réduites dans le navigateur, gardées dans le profil (pas dans les documents figés).
+-- ===========================================================================
+alter table public.profiles add column if not exists logo_img      text not null default '' check (length(logo_img) <= 400000);
+alter table public.profiles add column if not exists signature_img text not null default '' check (length(signature_img) <= 400000);
+alter table public.profiles add column if not exists stamp_img     text not null default '' check (length(stamp_img) <= 400000);
+alter table public.profiles add column if not exists brand_color   text not null default '' check (brand_color = '' or brand_color ~ '^#[0-9A-Fa-f]{6}$');
+grant update (logo_img, signature_img, stamp_img, brand_color) on public.profiles to authenticated;
+
+-- Un compte gratuit peut retirer ces éléments, pas en ajouter
+create or replace function public.profile_pro_guard()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if not (old.plan = 'pro' and (old.pro_until is null or old.pro_until >= current_date)) and (
+       (new.logo_img <> '' and new.logo_img is distinct from old.logo_img)
+    or (new.signature_img <> '' and new.signature_img is distinct from old.signature_img)
+    or (new.stamp_img <> '' and new.stamp_img is distinct from old.stamp_img)
+    or (new.brand_color <> '' and new.brand_color is distinct from old.brand_color)) then
+    raise exception 'Logo, couleur, signature et cachet sont réservés à la formule Pro. Passez en Pro pour les ajouter.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists profiles_pro_guard on public.profiles;
+create trigger profiles_pro_guard before update on public.profiles for each row execute function public.profile_pro_guard();
+
+-- ===========================================================================
+-- Codes Pro : générés dans l'espace admin, saisis par le freelance après son paiement
+-- ===========================================================================
+create table if not exists public.pro_codes (
+  code         text primary key,                      -- PRO-XXXX-XXXX
+  months       smallint not null check (months between 1 and 24),
+  note         text not null default '',
+  created_at   timestamptz not null default now(),
+  redeemed_by  uuid references auth.users (id) on delete set null,
+  redeemed_at  timestamptz
+);
+alter table public.pro_codes enable row level security;
+revoke all on public.pro_codes from anon, authenticated;
+
+-- Génère des codes au hasard (lettres et chiffres sans 0/O ni 1/I pour éviter les confusions)
+create or replace function public.admin_create_codes(p_count int, p_months int, p_note text)
+returns setof text language plpgsql security definer set search_path = '' as $$
+declare
+  v_abc text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  v_bytes bytea;
+  v_code text;
+  v_made int := 0;
+begin
+  perform public.admin_check();
+  if p_count is null or p_count not between 1 and 50 then raise exception 'Entre 1 et 50 codes à la fois.'; end if;
+  if p_months is null or p_months not between 1 and 24 then raise exception 'Durée entre 1 et 24 mois.'; end if;
+  while v_made < p_count loop
+    v_bytes := uuid_send(gen_random_uuid());
+    v_code := 'PRO-';
+    for i in 0..7 loop
+      v_code := v_code || substr(v_abc, get_byte(v_bytes, case when i < 6 then i else i + 4 end) % 32 + 1, 1);
+      if i = 3 then v_code := v_code || '-'; end if;
+    end loop;
+    insert into public.pro_codes (code, months, note) values (v_code, p_months, coalesce(trim(p_note), '')) on conflict do nothing;
+    if found then v_made := v_made + 1; return next v_code; end if;
+  end loop;
+end $$;
+
+drop function if exists public.admin_codes();
+create function public.admin_codes()
+returns table (code text, months smallint, note text, created_at timestamptz, redeemed_at timestamptz, redeemed_name text, redeemed_contact text)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform public.admin_check();
+  return query
+    select c.code, c.months, c.note, c.created_at, c.redeemed_at, p.name, coalesce(nullif(u.email::text, ''), u.phone::text)
+    from public.pro_codes c
+    left join public.profiles p on p.id = c.redeemed_by
+    left join auth.users u on u.id = c.redeemed_by
+    order by c.created_at desc
+    limit 200;
+end $$;
+
+create or replace function public.admin_delete_code(p_code text)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform public.admin_check();
+  delete from public.pro_codes where code = p_code and redeemed_at is null;
+  if not found then raise exception 'Code introuvable ou déjà utilisé.'; end if;
+end $$;
+
+-- Le freelance saisit son code : le Pro démarre (ou se prolonge) pour la durée du code
+create or replace function public.redeem_pro_code(p_code text)
+returns date language plpgsql security definer set search_path = '' as $$
+declare
+  v_user uuid := auth.uid();
+  v_raw text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  c public.pro_codes;
+  v_until date;
+begin
+  if v_user is null then raise exception 'Connectez-vous pour activer un code.'; end if;
+  if length(v_raw) = 8 then v_raw := 'PRO' || v_raw; end if;
+  select * into c from public.pro_codes
+  where code = 'PRO-' || substr(v_raw, 4, 4) || '-' || substr(v_raw, 8, 4) for update;
+  if not found or c.redeemed_at is not null then raise exception 'Code Pro invalide ou déjà utilisé.'; end if;
+  update public.pro_codes set redeemed_by = v_user, redeemed_at = now() where code = c.code;
+  update public.profiles set plan = 'pro',
+    pro_until = case when plan = 'pro' and pro_until is null then null
+                     else (greatest(coalesce(pro_until, current_date), current_date) + make_interval(months => c.months))::date end
+  where id = v_user
+  returning pro_until into v_until;
+  return v_until;
+end $$;
+
+revoke execute on function public.admin_create_codes(int, int, text), public.admin_codes(), public.admin_delete_code(text),
+  public.redeem_pro_code(text) from public, anon;
+grant execute on function public.admin_create_codes(int, int, text), public.admin_codes(), public.admin_delete_code(text),
+  public.redeem_pro_code(text) to authenticated;

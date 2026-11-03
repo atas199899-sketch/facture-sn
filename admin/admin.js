@@ -11,7 +11,7 @@ const rpc = async (fn, args) => ok(await sb.rpc(fn, args));
 
 const $ = s => document.querySelector(s);
 const state = {session: null, allowed: false, data: null};
-const ui = {view: 'dash', err: '', busy: false, q: '', plan: 'all'};
+const ui = {view: 'dash', err: '', busy: false, q: '', plan: 'all', fresh: []};
 
 function humanError(e) {
   const m = String(e?.message || e || '');
@@ -27,14 +27,16 @@ function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; 
 const showPhone = p => ('+' + String(p || '').replace(/^\+/, '')).replace(/^\+221(\d{2})(\d{3})(\d{2})(\d{2})$/, '+221 $1 $2 $3 $4');
 const when = ts => ts ? new Date(ts).toLocaleString('fr-FR', {day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit'}) : '—';
 const contact = u => u.email || (u.phone ? showPhone(u.phone) : '');
+// Référence indiquée par le freelance avec son paiement Pro (même calcul que dans l'application)
+const refOf = u => 'FSN-' + u.id.slice(0, 6).toUpperCase();
 const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Faybi SN</b><small>Administration</small></div></div>`;
 
 /* ---------- Données ---------- */
 async function load() {
   ui.err = '';
   try {
-    const [overview, users, gateway] = await Promise.all([rpc('admin_overview'), rpc('admin_users'), rpc('admin_gateway')]);
-    state.data = {overview, users, gateway};
+    const [overview, users, gateway, codes] = await Promise.all([rpc('admin_overview'), rpc('admin_users'), rpc('admin_gateway'), rpc('admin_codes')]);
+    state.data = {overview, users, gateway, codes};
   } catch (e) { ui.err = humanError(e); }
   render();
 }
@@ -61,7 +63,7 @@ function usersTable(list, full = true) {
   return `<div class="tablewrap"><table class="list"><thead><tr><th>Compte</th><th class="hide-sm">Inscrit</th><th class="hide-sm">Dernière connexion</th>
     ${full ? '<th class="num hide-sm">Clients</th>' : ''}<th class="num">Factures</th>${full ? '<th class="num hide-sm">Facturé</th><th class="num hide-sm">Encaissé</th>' : ''}<th>Formule</th></tr></thead>
     <tbody>${list.map(u => `<tr><td><b>${esc(u.name || 'Profil non rempli')}</b>${u.confirmed ? '' : ' <span class="pill warn">non confirmé</span>'}
-        <br><small class="muted">${esc(contact(u))}${u.job ? ' · ' + esc(u.job) : ''}</small></td>
+        <br><small class="muted">${esc(contact(u))}${u.job ? ' · ' + esc(u.job) : ''} · <span class="mono">${refOf(u)}</span></small></td>
       <td class="hide-sm">${when(u.created_at)}</td><td class="hide-sm">${when(u.last_sign_in_at)}</td>
       ${full ? `<td class="num hide-sm">${u.clients}</td>` : ''}<td class="num">${u.invoices}<small class="muted"> / ${u.documents}</small></td>
       ${full ? `<td class="num hide-sm">${num(u.billed_xof)}</td><td class="num hide-sm">${num(u.paid_xof)}</td>` : ''}
@@ -92,7 +94,7 @@ const PLANS = [['all', 'Tous'], ['free', 'Gratuit'], ['pro', 'Pro'], ['unconfirm
 function filteredUsers() {
   const q = ui.q.trim().toLowerCase();
   return state.data.users.filter(u => (ui.plan === 'all' || (ui.plan === 'unconfirmed' ? !u.confirmed : u.plan === ui.plan))
-    && (!q || [u.name, u.email, u.phone, u.job].some(v => (v || '').toLowerCase().includes(q))));
+    && (!q || [u.name, u.email, u.phone, u.job, refOf(u)].some(v => (v || '').toLowerCase().includes(q))));
 }
 function vUsers() {
   const n = state.data.users.length;
@@ -114,8 +116,32 @@ function vGateway() {
     </div>`;
 }
 
-const views = {dash: vDash, users: vUsers, gateway: vGateway};
-const NAV = [['dash', 'Tableau de bord'], ['users', 'Comptes'], ['gateway', 'Passerelle WhatsApp']];
+// Codes Pro : générés ici, envoyés au freelance après son paiement, saisis dans Paramètres › Formule Pro
+function vCodes() {
+  const list = state.data.codes, fresh = ui.fresh;
+  return `<div class="head"><div><h1>Codes Pro</h1><p>Après un paiement, générez un code et envoyez-le au freelance : il le saisit dans Paramètres › Formule Pro.</p></div><button class="btn" data-act="reload">Actualiser</button></div>
+  <div class="stack">
+    <form id="codeform" class="card stack"><h2 style="margin:0">Générer des codes</h2>
+      <div class="fgrid">
+        <label class="field">Durée<select id="c-months"><option value="1">1 mois (3 000 FCFA)</option><option value="12">12 mois (30 000 FCFA)</option><option value="3">3 mois</option><option value="6">6 mois</option></select></label>
+        <label class="field">Nombre de codes<input type="number" id="c-count" min="1" max="50" value="1"></label>
+        <label class="field">Note (facultatif)<input type="text" id="c-note" placeholder="Ex. : Wave de Awa, réf. FSN-1A2B3C"></label></div>
+      <div class="row"><button class="btn primary" type="submit" ${ui.busy ? 'disabled' : ''}>Générer</button></div>
+      ${fresh.length ? `<div class="panel stack"><b>${fresh.length > 1 ? `${fresh.length} nouveaux codes` : 'Nouveau code'}</b>
+        <pre class="mono" style="margin:0;white-space:pre-wrap;font-size:16px">${fresh.map(esc).join('\n')}</pre>
+        <div class="row"><button type="button" class="btn sm" data-act="copyCodes">Copier</button>
+          ${fresh.length === 1 ? `<a class="btn sm" href="https://wa.me/?text=${encodeURIComponent(`Bonjour ! Voici votre code Pro Faybi SN : ${fresh[0]}\nSaisissez-le dans l’application, rubrique Paramètres › Formule Pro : https://faybi-sn.pages.dev/app/`)}" target="_blank" rel="noopener">Envoyer sur WhatsApp</a>` : ''}</div></div>` : ''}
+    </form>
+    <section class="card"><h2>Codes générés</h2><div class="tablewrap"><table class="list"><thead><tr><th>Code</th><th>Durée</th><th class="hide-sm">Note</th><th class="hide-sm">Créé</th><th>Utilisé par</th><th></th></tr></thead>
+      <tbody>${list.map(c => `<tr><td class="mono">${esc(c.code)}</td><td>${c.months} mois</td><td class="hide-sm">${esc(c.note)}</td><td class="hide-sm">${when(c.created_at)}</td>
+        <td>${c.redeemed_at ? `${esc(c.redeemed_name || c.redeemed_contact || 'Compte supprimé')}<br><small class="muted">${when(c.redeemed_at)}</small>` : '<span class="pill info">disponible</span>'}</td>
+        <td class="num">${c.redeemed_at ? '' : `<button class="btn sm ghost" data-act="codeDel" data-code="${esc(c.code)}" ${ui.busy ? 'disabled' : ''}>Supprimer</button>`}</td></tr>`).join('')
+        || '<tr><td colspan="6" class="muted">Aucun code pour l’instant.</td></tr>'}</tbody></table></div></section>
+  </div>`;
+}
+
+const views = {dash: vDash, users: vUsers, gateway: vGateway, codes: vCodes};
+const NAV = [['dash', 'Tableau de bord'], ['users', 'Comptes'], ['codes', 'Codes Pro'], ['gateway', 'Passerelle WhatsApp']];
 
 function render() {
   const root = $('#root');
@@ -133,6 +159,17 @@ const acts = {
   go: el => { ui.view = el.dataset.view; render(); window.scrollTo(0, 0); },
   reload: () => { state.data = null; render(); load(); },
   plans: el => { ui.plan = el.dataset.f; render(); },
+  copyCodes: () => navigator.clipboard.writeText(ui.fresh.join('\n')).then(() => toast('Codes copiés')).catch(() => toast('Sélectionnez les codes pour les copier')),
+  codeDel: async el => {
+    if (ui.busy) return;
+    ui.busy = true; render();
+    try {
+      await rpc('admin_delete_code', {p_code: el.dataset.code});
+      state.data.codes = state.data.codes.filter(c => c.code !== el.dataset.code);
+      toast('Code supprimé');
+    } catch (e) { ui.err = humanError(e); }
+    ui.busy = false; render();
+  },
   logout: async () => { await sb.auth.signOut({scope: 'local'}).catch(() => {}); onSession(null); },
   plan: async el => {
     if (ui.busy) return;
@@ -154,6 +191,16 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('submit', async e => {
   e.preventDefault();
+  if (e.target.id === 'codeform' && !ui.busy) {
+    const p = {p_count: +$('#c-count').value || 1, p_months: +$('#c-months').value, p_note: $('#c-note').value};
+    ui.busy = true; ui.err = ''; render();
+    try {
+      ui.fresh = await rpc('admin_create_codes', p);
+      state.data.codes = await rpc('admin_codes');
+      toast(ui.fresh.length > 1 ? `${ui.fresh.length} codes générés` : 'Code généré');
+    } catch (err) { ui.err = humanError(err); }
+    ui.busy = false; render(); return;
+  }
   if (e.target.id !== 'loginform' || ui.busy) return;
   ui.busy = true; ui.err = '';
   const email = $('#a-email').value.trim(), password = $('#a-pass').value;
