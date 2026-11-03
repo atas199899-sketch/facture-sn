@@ -570,7 +570,8 @@ function brandCard(p) {
 function vPro() {
   const pro = isPro(), used = monthInvoices(), ref = proRef();
   const li = a => `<ul class="ticks">${a.map(x => `<li>${x}</li>`).join('')}</ul>`;
-  const wa = SUPPORT_WHATSAPP && `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(`Bonjour Faybi SN, je viens de payer la formule Pro. Référence : ${ref}`)}`;
+  const waTo = SUPPORT_WHATSAPP || PRO_PAY_NUMBER;
+  const wa = waTo && `https://wa.me/${waTo}?text=${encodeURIComponent(`Bonjour Faybi SN, je viens de payer la formule Pro. Référence : ${ref}`)}`;
   return `<div class="head"><div><button class="btn ghost sm" data-act="go" data-view="profile">← Paramètres</button><h1 style="margin-top:8px">Formule Pro</h1>
       <p>${pro ? `Votre compte est en ${proLabel()}. Merci pour votre confiance !` : `Formule gratuite : ${used} facture${used > 1 ? 's' : ''} validée${used > 1 ? 's' : ''} sur ${FREE_INVOICES} ce mois-ci.`}</p></div></div>
   <div class="stack">
@@ -584,9 +585,9 @@ function vPro() {
       <ol class="olist">
         <li>Payez <b>3 000 FCFA</b> (un mois) ou <b>30 000 FCFA</b> (un an) avec un des boutons ci-dessous, ou par transfert au <b class="mono">${esc(showPhone('+' + PRO_PAY_NUMBER))}</b>.</li>
         <li>Indiquez la référence <b class="mono">${ref}</b> dans le paiement si l’application vous le propose.</li>
-        <li>${wa ? 'Prévenez-nous sur WhatsApp : nous' : 'Nous retrouvons votre paiement grâce à la référence et nous'} vous envoyons un <b>code Pro</b> dans la journée, sur WhatsApp ou par e-mail. Saisissez-le ci-dessous.</li></ol>
+        <li>Appuyez sur « J’ai payé » pour nous prévenir sur WhatsApp : nous vous envoyons un <b>code Pro</b> dans la journée, sur WhatsApp ou par e-mail. Saisissez-le ci-dessous.</li></ol>
       <div class="row">${PRO_WAVE_URL ? `<a class="btn pay-wave" href="${esc(PRO_WAVE_URL)}" target="_blank" rel="noopener">Payer avec Wave</a>` : ''}${PRO_OM_URL ? `<a class="btn pay-om" href="${esc(PRO_OM_URL)}" target="_blank" rel="noopener">Payer avec Orange Money</a>` : ''}</div>
-      <div class="row">${wa ? `<a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">J’ai payé : prévenir sur WhatsApp</a>` : ''}<button class="btn" data-act="copyRef">Copier la référence</button></div></section>`
+      <div class="row">${wa ? `<a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">J’ai payé</a>` : ''}</div></section>`
       : `<section class="card"><h2 style="margin:0 0 6px">Bientôt disponible</h2><p class="muted" style="margin:0">Le paiement de la formule Pro ouvre très prochainement. Votre référence sera <b class="mono">${ref}</b>.</p></section>`}
     <form id="proform" class="card stack"><h2 style="margin:0">${pro ? 'Prolonger avec un code Pro' : 'J’ai un code Pro'}</h2>
       <div class="row"><input type="text" id="pro-code" placeholder="PRO-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" style="max-width:260px" aria-label="Code Pro">
@@ -892,7 +893,6 @@ const acts = {
     if (!url) { toast('Signez d’abord dans le cadre'); return; }
     ui.sigPad = false; saveBrand({signature_img: url}, 'Signature enregistrée');
   },
-  copyRef: () => navigator.clipboard.writeText(proRef()).then(() => toast('Référence copiée')).catch(() => toast(proRef())),
   // Partage du PDF avec le message (feuille de partage du téléphone : WhatsApp, puis le client)
   sendPdf: async () => {
     const d = ui.doc, file = pdfReady(d), text = $('#relmsg')?.value || '', remind = ui.share === 'remind';
