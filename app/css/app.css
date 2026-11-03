@@ -65,9 +65,11 @@ nav .ns{display:none}
 .olist{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
 .p-logo{display:block;max-height:64px;max-width:220px;margin-bottom:10px}
 .p-sign{margin:22px 0 0 auto;width:max-content;max-width:100%;text-align:center;font-size:12.5px;break-inside:avoid}
-.p-sign-imgs{display:flex;align-items:center;justify-content:center;min-height:56px}
-.p-sig{max-height:80px;max-width:230px;position:relative}
-.p-stamp{max-height:110px;max-width:140px;opacity:.9;transform:rotate(-6deg);margin-right:-34px}
+/* La signature se pose par-dessus le cachet, comme sur papier */
+.p-sign-imgs{display:grid;place-items:center;min-height:56px}
+.p-sign-imgs > img{grid-area:1 / 1}
+.p-sig{max-height:80px;max-width:230px;position:relative;z-index:1}
+.p-stamp{max-height:110px;max-width:140px;opacity:.85;transform:rotate(-6deg)}
 .panel.remind{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
 nav button:hover{background:var(--sunk);color:var(--ink)}
 nav button[aria-current="page"]{background:var(--accent-soft);color:var(--ink)}
