@@ -58,6 +58,10 @@ nav .ns{display:none}
 .plan-card.hl{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
 .ticks{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
 .ticks li::before{content:"✓";color:var(--accent);font-weight:700;margin-right:8px}
+.btn.pay-wave{background:#1DC3FF;border-color:#1DC3FF;color:#0B1F33;font-weight:600}
+.btn.pay-wave:hover{background:#12B2EC}
+.btn.pay-om{background:#FF7900;border-color:#FF7900;color:#fff;font-weight:600}
+.btn.pay-om:hover{background:#EB6F00}
 .olist{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
 .p-logo{display:block;max-height:64px;max-width:220px;margin-bottom:10px}
 .p-sign{margin:22px 0 0 auto;width:max-content;max-width:100%;text-align:center;font-size:12.5px;break-inside:avoid}

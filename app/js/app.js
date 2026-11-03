@@ -2,7 +2,7 @@
 // Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures. Étape 3 : paiements reçus. Étape 4 : relances.
 // Formule Pro : factures illimitées, logo, couleur, signature et cachet ; PDF partagé dans WhatsApp.
 import * as db from './db.js';
-import {WHATSAPP_GATEWAY, PRO_PAY_NUMBER, SUPPORT_WHATSAPP} from './config.js';
+import {WHATSAPP_GATEWAY, PRO_PAY_NUMBER, PRO_WAVE_URL, PRO_OM_URL, SUPPORT_WHATSAPP} from './config.js';
 import {esc, num, parseNum, isEur, amt, amtShort, toMinor, toMajor, toXOF, decimal, today, addDays, fmtDate, totals, sommeEnLettres} from './format.js';
 
 const $ = s => document.querySelector(s);
@@ -582,9 +582,10 @@ function vPro() {
     </div>
     ${pro ? '' : PRO_PAY_NUMBER ? `<section class="card stack"><h2 style="margin:0">Passer en Pro</h2>
       <ol class="olist">
-        <li>Envoyez <b>3 000 FCFA</b> (un mois) ou <b>30 000 FCFA</b> (un an) par Wave ou Orange Money au <b class="mono">${esc(showPhone('+' + PRO_PAY_NUMBER))}</b>.</li>
-        <li>Indiquez la référence <b class="mono">${ref}</b> dans le paiement.</li>
+        <li>Payez <b>3 000 FCFA</b> (un mois) ou <b>30 000 FCFA</b> (un an) avec un des boutons ci-dessous, ou par transfert au <b class="mono">${esc(showPhone('+' + PRO_PAY_NUMBER))}</b>.</li>
+        <li>Indiquez la référence <b class="mono">${ref}</b> dans le paiement si l’application vous le propose.</li>
         <li>${wa ? 'Prévenez-nous sur WhatsApp : nous' : 'Nous retrouvons votre paiement grâce à la référence et nous'} vous envoyons un <b>code Pro</b> dans la journée, sur WhatsApp ou par e-mail. Saisissez-le ci-dessous.</li></ol>
+      <div class="row">${PRO_WAVE_URL ? `<a class="btn pay-wave" href="${esc(PRO_WAVE_URL)}" target="_blank" rel="noopener">Payer avec Wave</a>` : ''}${PRO_OM_URL ? `<a class="btn pay-om" href="${esc(PRO_OM_URL)}" target="_blank" rel="noopener">Payer avec Orange Money</a>` : ''}</div>
       <div class="row">${wa ? `<a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">J’ai payé : prévenir sur WhatsApp</a>` : ''}<button class="btn" data-act="copyRef">Copier la référence</button></div></section>`
       : `<section class="card"><h2 style="margin:0 0 6px">Bientôt disponible</h2><p class="muted" style="margin:0">Le paiement de la formule Pro ouvre très prochainement. Votre référence sera <b class="mono">${ref}</b>.</p></section>`}
     <form id="proform" class="card stack"><h2 style="margin:0">${pro ? 'Prolonger avec un code Pro' : 'J’ai un code Pro'}</h2>

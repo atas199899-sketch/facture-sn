@@ -15,5 +15,8 @@ export const WHATSAPP_GATEWAY = '221788597452';
 // et numéro WhatsApp à prévenir (format international sans espaces, ex. '221770000000').
 // Tant que PRO_PAY_NUMBER est vide, la page Pro annonce l'ouverture prochaine du paiement.
 export const PRO_PAY_NUMBER = '221788597452';
+// Liens de paiement marchand (le client saisit le montant dans Wave ou Orange Money)
+export const PRO_WAVE_URL = 'https://pay.wave.com/m/M_sn_INnGMrYumrBs/c/sn/';
+export const PRO_OM_URL = 'https://sugu.orange-sonatel.com/mp/dcutOJWKgh4PMsS0rpstqO';
 // Pas le numéro de la passerelle : il répond automatiquement à tous les messages.
 export const SUPPORT_WHATSAPP = '';
