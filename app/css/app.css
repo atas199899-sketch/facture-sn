@@ -138,7 +138,7 @@ table.list tbody tr[data-act]:hover{background:var(--sunk)}
 td.cl{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 label.field{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:500;color:var(--muted);min-width:0}
-input[type=text],input[type=date],input[type=search],input[type=email],input[type=tel],select,textarea{
+input[type=text],input[type=date],input[type=search],input[type=email],input[type=tel],input[type=number],select,textarea{
   width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--ink);font-size:15px;min-width:0}
 textarea{resize:vertical;min-height:70px}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
