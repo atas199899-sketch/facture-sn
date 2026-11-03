@@ -230,7 +230,6 @@ function vHome() {
     ${nd ? `<section class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Derniers documents</h2><button class="btn ghost sm" data-act="go" data-view="docs">Tout voir</button></div>
       <div class="tablewrap">${docTable(state.docs.slice(0, 5))}</div></section>` : ''}
     ${isPro() ? '' : `<p class="note">Formule gratuite : ${monthInvoices()} facture${monthInvoices() > 1 ? 's' : ''} validée${monthInvoices() > 1 ? 's' : ''} sur ${FREE_INVOICES} ce mois-ci. <a href="#" data-act="go" data-view="pro">Passer en Pro</a> pour des factures illimitées, votre logo, votre signature et votre cachet.</p>`}
-    <p class="note">Bêta : les liens de paiement Wave / Orange Money et les relances automatiques par e-mail arrivent aux prochaines étapes.</p>
   </div>`;
 }
 
@@ -572,14 +571,14 @@ function vPro() {
   const li = a => `<ul class="ticks">${a.map(x => `<li>${x}</li>`).join('')}</ul>`;
   const waTo = SUPPORT_WHATSAPP || PRO_PAY_NUMBER;
   const wa = waTo && `https://wa.me/${waTo}?text=${encodeURIComponent(`Bonjour Faybi SN, je viens de payer la formule Pro. Référence : ${ref}`)}`;
-  return `<div class="head"><div><button class="btn ghost sm" data-act="go" data-view="profile">← Paramètres</button><h1 style="margin-top:8px">Formule Pro</h1>
+  return `<div class="head"><div><h1>Abonnement</h1>
       <p>${pro ? `Votre compte est en ${proLabel()}. Merci pour votre confiance !` : `Formule gratuite : ${used} facture${used > 1 ? 's' : ''} validée${used > 1 ? 's' : ''} sur ${FREE_INVOICES} ce mois-ci.`}</p></div></div>
   <div class="stack">
     <div class="grid2">
       <section class="card plan-card"><h2>Gratuit</h2><div class="price">0 <small>FCFA</small></div>
         ${li([`${FREE_INVOICES} factures par mois`, 'Devis et clients illimités', 'Envoi sur WhatsApp avec le PDF', 'Paiements reçus et relances du jour', 'Mention « Créé avec Faybi SN »'])}</section>
       <section class="card plan-card hl"><h2>Pro</h2><div class="price">3 000 <small>FCFA / mois</small></div><p class="muted" style="margin:0">ou 30 000 FCFA par an, soit 2 mois offerts</p>
-        ${li(['Factures illimitées', 'Votre logo et votre couleur', 'Votre signature et votre cachet', 'Sans la mention Faybi SN', 'Bientôt : liens de paiement Wave et relances par e-mail, sans supplément'])}</section>
+        ${li(['Factures illimitées', 'Votre logo et votre couleur', 'Votre signature et votre cachet', 'Sans la mention Faybi SN', 'Les mêmes relances et l’envoi du PDF, sans limite'])}</section>
     </div>
     ${pro ? '' : PRO_PAY_NUMBER ? `<section class="card stack"><h2 style="margin:0">Passer en Pro</h2>
       <ol class="olist">
@@ -642,16 +641,17 @@ function vProfile() {
 }
 
 const views = {home: vHome, docs: vDocs, doc: vDoc, edit: vEdit, clients: vClients, client: vClient, catalog: vCatalog, profile: vProfile, pro: vPro};
-const NAV = [['home', 'Accueil', 'Accueil'], ['docs', 'Factures et devis', 'Factures'], ['clients', 'Clients', 'Clients'], ['catalog', 'Mes tarifs', 'Tarifs'], ['profile', 'Paramètres', 'Réglages']];
+const NAV = [['home', 'Accueil', 'Accueil'], ['docs', 'Factures et devis', 'Factures'], ['clients', 'Clients', 'Clients'], ['catalog', 'Mes tarifs', 'Tarifs'], ['pro', 'Abonnement', 'Abonnement'], ['profile', 'Paramètres', 'Réglages']];
 const ico = d => `<svg class="ni" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICONS = {
   home: ico('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>'),
   docs: ico('<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>'),
   clients: ico('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.7 3 2.5 3.5 5.2"/>'),
   catalog: ico('<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>'),
+  pro: ico('<path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/>'),
   profile: ico('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>')
 };
-const navOf = {home: 'home', docs: 'docs', doc: 'docs', edit: 'docs', clients: 'clients', client: 'clients', catalog: 'catalog', profile: 'profile', pro: 'profile'};
+const navOf = {home: 'home', docs: 'docs', doc: 'docs', edit: 'docs', clients: 'clients', client: 'clients', catalog: 'catalog', profile: 'profile', pro: 'pro'};
 
 function render(scroll) {
   const root = $('#root');
