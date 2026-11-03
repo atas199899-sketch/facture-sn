@@ -3,17 +3,17 @@
 Les freelances peuvent se connecter avec leur numéro, sans mot de passe et sans SMS payant :
 
 1. Dans l'application, le freelance tape son numéro et appuie sur « Recevoir mon code ». Supabase crée un code et le range dans la base.
-2. L'application ouvre WhatsApp avec un message prêt pour le numéro de Facture SN : « Bonjour Facture SN, je demande mon code de connexion. »
+2. L'application ouvre WhatsApp avec un message prêt pour le numéro de Faybi SN : « Bonjour Faybi SN, je demande mon code de connexion. »
 3. Le téléphone passerelle reçoit le message. MacroDroid envoie le numéro de l'expéditeur à Supabase, qui renvoie le texte à répondre.
-4. MacroDroid répond dans la conversation : « Votre code Facture SN : 482913 ». Le freelance tape le code et il est connecté.
+4. MacroDroid répond dans la conversation : « Votre code Faybi SN : 482913 ». Le freelance tape le code et il est connecté.
 
 Côté Supabase, tout est déjà en place : hook « Send SMS », fournisseur « Phone » activé, code valable 10 minutes, fonction `claim_otp` (voir `supabase/schema.sql`).
 
 ## Ce qu'il faut
 
 - Un téléphone Android qui reste **allumé, branché et connecté** (Wi-Fi de préférence). Un ancien téléphone suffit.
-- Une **puce dédiée**, utilisée uniquement pour Facture SN.
-- **WhatsApp Business** (gratuit), installé avec cette puce. Nom du profil : « Facture SN ».
+- Une **puce dédiée**, utilisée uniquement pour Faybi SN.
+- **WhatsApp Business** (gratuit), installé avec cette puce. Nom du profil : « Faybi SN ».
 - **MacroDroid** (gratuit, Play Store). Une seule macro suffit.
 
 ## 1. Préparer le téléphone
@@ -39,7 +39,7 @@ update public.gateway_secrets set secret = encode(gen_random_bytes(24), 'hex');
 
 ## 3. Créer la macro dans MacroDroid
 
-Ouvrez MacroDroid > **Ajouter une macro**, nommez-la « Codes Facture SN ».
+Ouvrez MacroDroid > **Ajouter une macro**, nommez-la « Codes Faybi SN ».
 
 ### Déclencheur
 
@@ -72,7 +72,7 @@ Ouvrez MacroDroid > **Ajouter une macro**, nommez-la « Codes Facture SN ».
 
 ### Action 2 : ne répondre que si Supabase a renvoyé un texte
 
-**Conditions/Boucles > Si (If)** : Variables locales › `reponse` › **Contient** › `Facture SN`.
+**Conditions/Boucles > Si (If)** : Variables locales › `reponse` › **Contient** › `Faybi SN`.
 
 Supabase renvoie un texte vide pour nos propres réponses (notifications « Vous ») et pour une deuxième demande du même numéro dans la minute : sans cette condition, MacroDroid enverrait un message vide ou répondrait en boucle.
 
@@ -98,7 +98,7 @@ Envoyez le numéro de la puce dédiée à Claude, qui le renseigne dans `app/js/
 
 | Réponse reçue sur WhatsApp | Cause | Solution |
 |---|---|---|
-| « Votre code Facture SN : … » | Tout fonctionne | — |
+| « Votre code Faybi SN : … » | Tout fonctionne | — |
 | « Pour recevoir un code, saisissez d'abord votre numéro… » | Pas de code demandé pour ce numéro depuis 10 minutes, ou numéro différent | Redemander le code dans l'application, puis écrire depuis le même numéro |
 | « Nous n'avons pas pu lire votre numéro… » | Le titre de la notification est un nom (contact enregistré) | Supprimer ce contact du téléphone passerelle |
 | Aucune réponse | Macro désactivée, téléphone hors ligne, ou batterie qui coupe MacroDroid | Vérifier la connexion, l'optimisation de batterie et le journal de MacroDroid |

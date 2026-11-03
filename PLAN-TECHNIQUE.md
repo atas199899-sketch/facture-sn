@@ -1,4 +1,4 @@
-# Facture SN : plan technique
+# Faybi SN : plan technique
 
 Ce document décrit comment passer du prototype (`demo.html`) à un vrai produit en ligne pour les freelances au Sénégal.
 

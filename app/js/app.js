@@ -1,4 +1,4 @@
-// Facture SN : écrans et navigation de l'application connectée
+// Faybi SN : écrans et navigation de l'application connectée
 // Étape 1 : compte, profil, clients, tarifs. Étape 2 : devis et factures. Étape 3 : paiements reçus. Étape 4 : relances.
 import * as db from './db.js';
 import {WHATSAPP_GATEWAY} from './config.js';
@@ -106,7 +106,7 @@ const remindWhen = d => { const n = lateDays(d); return n < 0 ? `échéance dans
 const remindRank = d => d.reminder_count ? `${d.reminder_count + 1}ᵉ relance` : '1ʳᵉ relance';
 
 /* ---------- Écrans hors connexion ---------- */
-const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Facture SN</b><small>Pour les freelances</small></div></div>`;
+const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Faybi SN</b><small>Pour les freelances</small></div></div>`;
 const msgs = () => `${ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : ''}${ui.info ? `<div class="ok" role="status">${esc(ui.info)}</div>` : ''}`;
 
 function vSetup() {
@@ -125,7 +125,7 @@ const showPhone = p => p.replace(/^\+221(\d{2})(\d{3})(\d{2})(\d{2})$/, '+221 $1
 const userLabel = u => u.email || (u.phone ? showPhone('+' + u.phone) : '');
 
 function vPhone() {
-  const wa = `https://wa.me/${WHATSAPP_GATEWAY}?text=${encodeURIComponent('Bonjour Facture SN, je demande mon code de connexion.')}`;
+  const wa = `https://wa.me/${WHATSAPP_GATEWAY}?text=${encodeURIComponent('Bonjour Faybi SN, je demande mon code de connexion.')}`;
   if (ui.phoneStep === 1) return `<div class="auth"><form class="auth-card" id="phoneform">${brand}<h1>Connexion avec votre numéro</h1>
     <p class="muted" style="margin:0">Vous recevrez un code par WhatsApp. Pas besoin de mot de passe. Votre compte est créé automatiquement la première fois.</p>
     <label class="field">Numéro WhatsApp<input type="tel" id="a-phone" value="${esc(ui.phone)}" placeholder="77 123 45 67" autocomplete="tel" required></label>
@@ -197,7 +197,7 @@ function vHome() {
   const step = (done, title, sub, act) => `<div class="step ${done ? 'done' : ''}"><span class="dot">${done ? '✓' : '·'}</span>
     <div class="txt"><b>${title}</b><small>${sub}</small></div>${act || ''}</div>`;
   const started = Boolean(p.phone_pay && p.job) && nc > 0 && nt > 0 && nd > 0;
-  return `<div class="head"><div><h1>Bonjour ${esc(p.name.split(' ')[0])}</h1><p>Votre espace Facture SN est prêt.</p></div>
+  return `<div class="head"><div><h1>Bonjour ${esc(p.name.split(' ')[0])}</h1><p>Votre espace Faybi SN est prêt.</p></div>
     <div class="row"><button class="btn" data-act="new" data-type="DEV">+ Devis</button><button class="btn primary" data-act="new" data-type="FAC">+ Facture</button></div></div>
   <div class="stack">
     <div class="kpis">
@@ -272,7 +272,7 @@ function waLink(phone, text) {
   if (digits.length === 9) digits = '221' + digits;
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
-// Mention « Créé avec Facture SN » sur les documents des comptes gratuits (retirée en Pro)
+// Mention « Créé avec Faybi SN » sur les documents des comptes gratuits (retirée en Pro)
 const MADE_URL = 'https://facture-sn.pages.dev/?ref=facture';
 const showMade = () => state.profile?.plan !== 'pro';
 function documentText(d, co, c) {
@@ -281,7 +281,7 @@ function documentText(d, co, c) {
   const pay = isEur(d.currency) ? 'Règlement par virement bancaire.' : `Vous pouvez régler par Wave ou Orange Money au ${co.phone_pay || '[votre numéro]'}.`;
   return `Bonjour ${c.contact || c.name || ''},\n\nVoici ${dev ? 'mon devis' : 'ma facture'} ${d.number} d’un montant de ${amt(d.currency, d.total_ttc)}`
     + `${d.due_date ? (dev ? `, valable jusqu’au ${fmtDate(d.due_date)}` : `, à régler avant le ${fmtDate(d.due_date)}`) : ''}.${dep}\n\n${pay}\n\nMerci pour votre confiance,\n${co.name || ''}`
-    + (showMade() ? `\n\n—\n${dev ? 'Devis créé' : 'Facture créée'} avec Facture SN, gratuit pour les freelances : ${MADE_URL}` : '');
+    + (showMade() ? `\n\n—\n${dev ? 'Devis créé' : 'Facture créée'} avec Faybi SN, gratuit pour les freelances : ${MADE_URL}` : '');
 }
 
 // Le ton change avec le retard : rappel aimable, jour de l'échéance, relance, relance ferme
@@ -328,7 +328,7 @@ function paper(d, co, c) {
       <div class="p-sec"><div class="lbl">Paiement</div><ul>${isEur(cur) ? '<li>Virement bancaire (coordonnées sur demande)</li>' : `<li>Wave et Orange Money : ${esc(co.phone_pay || '—')}</li><li>Virement ou espèces</li>`}</ul></div>
       ${d.notes || co.mentions ? `<div class="p-sec"><div class="lbl">Conditions</div><div class="muted">${esc(d.notes)}${d.notes && co.mentions ? '<br>' : ''}${esc(co.mentions)}</div></div>` : ''}
     </div>
-    ${showMade() ? `<p class="p-made">${dev ? 'Devis créé' : 'Facture créée'} avec <a href="${MADE_URL}" target="_blank" rel="noopener">Facture SN</a> · facturation gratuite pour les freelances · facture-sn.pages.dev</p>` : ''}
+    ${showMade() ? `<p class="p-made">${dev ? 'Devis créé' : 'Facture créée'} avec <a href="${MADE_URL}" target="_blank" rel="noopener">Faybi SN</a> · facturation gratuite pour les freelances · facture-sn.pages.dev</p>` : ''}
   </article>`;
 }
 
@@ -689,7 +689,7 @@ const acts = {
     toast('Facture créée en brouillon à partir du devis');
   }),
   print: () => {
-    const title = document.title; document.title = ui.doc.number || 'Facture SN';
+    const title = document.title; document.title = ui.doc.number || 'Faybi SN';
     window.print(); document.title = title;
   },
   share: el => { ui.share = ui.share === el.dataset.mode ? false : el.dataset.mode; ui.pay = null; render(); },

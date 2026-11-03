@@ -1,4 +1,4 @@
-// Facture SN : espace d'administration, séparé de l'application des freelances.
+// Faybi SN : espace d'administration, séparé de l'application des freelances.
 // Session distincte (storageKey propre) : se connecter ici ne connecte pas /app/, et inversement.
 // Toutes les données passent par les fonctions admin_* de supabase/schema.sql, qui refusent les autres comptes.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/+esm';
@@ -27,7 +27,7 @@ function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; 
 const showPhone = p => ('+' + String(p || '').replace(/^\+/, '')).replace(/^\+221(\d{2})(\d{3})(\d{2})(\d{2})$/, '+221 $1 $2 $3 $4');
 const when = ts => ts ? new Date(ts).toLocaleString('fr-FR', {day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit'}) : '—';
 const contact = u => u.email || (u.phone ? showPhone(u.phone) : '');
-const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Facture SN</b><small>Administration</small></div></div>`;
+const brand = `<div class="brand"><span class="mark" aria-hidden="true">FS</span><div><b>Faybi SN</b><small>Administration</small></div></div>`;
 
 /* ---------- Données ---------- */
 async function load() {
@@ -42,7 +42,7 @@ async function load() {
 /* ---------- Écrans ---------- */
 function vLogin() {
   return `<div class="auth"><form class="auth-card" id="loginform">${brand}<h1>Espace administrateur</h1>
-    <p class="muted" style="margin:0">Réservé aux comptes administrateurs de Facture SN.</p>
+    <p class="muted" style="margin:0">Réservé aux comptes administrateurs de Faybi SN.</p>
     <label class="field">E-mail<input type="email" id="a-email" autocomplete="email" required></label>
     <label class="field">Mot de passe<input type="password" id="a-pass" autocomplete="current-password" required></label>
     ${ui.err ? `<div class="err" role="alert">${esc(ui.err)}</div>` : ''}
@@ -72,7 +72,7 @@ function usersTable(list, full = true) {
 
 function vDash() {
   const o = state.data.overview;
-  return `<div class="head"><div><h1>Tableau de bord</h1><p>Tous les comptes Facture SN.</p></div><button class="btn" data-act="reload">Actualiser</button></div>
+  return `<div class="head"><div><h1>Tableau de bord</h1><p>Tous les comptes Faybi SN.</p></div><button class="btn" data-act="reload">Actualiser</button></div>
     <div class="stack">
       <div class="kpis">
         ${kpi('Comptes', o.users, `+${o.users_7d} cette semaine · ${o.by_phone} par numéro`)}

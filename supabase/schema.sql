@@ -1,4 +1,4 @@
--- Facture SN : schéma de la base (étape 1 : profil, clients, tarifs ; étape 2 : devis et factures)
+-- Faybi SN : schéma de la base (étape 1 : profil, clients, tarifs ; étape 2 : devis et factures)
 -- À coller dans Supabase > SQL Editor > New query, puis « Run ».
 -- Le script peut être relancé sans risque : il ne recrée que ce qui manque.
 
@@ -417,7 +417,7 @@ end $$;
 -- ===========================================================================
 -- Connexion par numéro de téléphone, code remis par WhatsApp (sans SMS payant)
 -- 1. Supabase Auth crée le code et appelle send_sms_hook, qui le range dans otp_outbox.
--- 2. Le freelance écrit au numéro WhatsApp de Facture SN ; le téléphone passerelle
+-- 2. Le freelance écrit au numéro WhatsApp de Faybi SN ; le téléphone passerelle
 --    (MacroDroid) appelle claim_otp avec le numéro de l'expéditeur et répond le texte reçu.
 -- Voir docs/MACRODROID.md.
 -- ===========================================================================
@@ -481,7 +481,7 @@ begin
     raise exception 'Clé de la passerelle invalide.';
   end if;
   -- Nos propres réponses (notification « Vous ») ne déclenchent rien
-  if v_title ~ '(Nous n’avons pas pu lire|Pour recevoir un code|Votre code Facture SN)'
+  if v_title ~ '(Nous n’avons pas pu lire|Pour recevoir un code|Votre code Faybi SN|Votre code Facture SN)'
      or lower(btrim(v_title)) in ('vous', 'you', 'moi', 'me') then
     return '';
   end if;
@@ -494,7 +494,7 @@ begin
   insert into public.gateway_log (title) values (v_title);
   -- Le titre de la notification doit être un numéro : un nom (contact enregistré, pseudo) est refusé
   if v_title !~ '^\s*\+?[0-9 ()\-  ]{8,22}\s*$' then
-    return 'Bonjour ! Nous n’avons pas pu lire votre numéro. Écrivez-nous depuis le numéro saisi dans l’application Facture SN.';
+    return 'Bonjour ! Nous n’avons pas pu lire votre numéro. Écrivez-nous depuis le numéro saisi dans l’application Faybi SN.';
   end if;
   v_phone = regexp_replace(v_title, '\D', '', 'g');
   if length(v_phone) = 9 then v_phone = '221' || v_phone; end if;
@@ -502,9 +502,9 @@ begin
   where phone = v_phone and created_at > now() - interval '10 minutes'
   returning otp into v_otp;
   if v_otp is null then
-    return 'Bonjour ! Pour recevoir un code, saisissez d’abord votre numéro dans l’application Facture SN : https://facture-sn.pages.dev/app/';
+    return 'Bonjour ! Pour recevoir un code, saisissez d’abord votre numéro dans l’application Faybi SN : https://facture-sn.pages.dev/app/';
   end if;
-  return 'Votre code Facture SN : ' || v_otp || E'\nIl est valable 10 minutes. Ne le communiquez à personne.';
+  return 'Votre code Faybi SN : ' || v_otp || E'\nIl est valable 10 minutes. Ne le communiquez à personne.';
 end $$;
 revoke execute on function public.claim_otp(text, text) from public;
 grant execute on function public.claim_otp(text, text) to anon, authenticated;

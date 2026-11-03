@@ -1,4 +1,4 @@
-# Facture SN
+# Faybi SN
 
 Outil de facturation pour les freelances au Sénégal : devis et factures en FCFA ou en euros, acomptes, paiements Wave et Orange Money, relances WhatsApp.
 
